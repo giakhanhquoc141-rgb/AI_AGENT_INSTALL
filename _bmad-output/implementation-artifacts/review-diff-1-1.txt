@@ -1,0 +1,158 @@
+diff --git a/AI_Tools_Installer.bat b/AI_Tools_Installer.bat
+new file mode 100644
+index 0000000..7a52335
+--- /dev/null
++++ b/AI_Tools_Installer.bat
+@@ -0,0 +1,152 @@
++@echo off
++rem ============================================================
++rem  AI Tools Installer - Phien ban 0.1.0
++rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
++rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
++rem ============================================================
++
++setlocal
++chcp 65001 >nul
++
++rem --------------------------- [init] ---------------------------
++set "TOOL_NAME=AI Tools Installer"
++set "TOOL_VERSION=0.1.0"
++set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
++set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
++
++goto :router
++
++rem ========================= [helpers] ==========================
++
++rem ------------------------------------------------------------
++rem  Bật màu ANSI nếu console hỗ trợ. Nếu không hỗ trợ (hoặc
++rem  đang chuyển hướng ra file/ống dẫn), màu tự giảm về mặc định
++rem  — không bao giờ in mã màu thô ra màn hình.
++rem ------------------------------------------------------------
++:init_colors
++set "ESC="
++set "VT_OK="
++for /f "delims=" %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
++if not defined ESC goto :eof
++powershell -NoProfile -ExecutionPolicy Bypass -Command ^
++ "try { Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class VT{[DllImport(\"kernel32.dll\")]public static extern IntPtr GetStdHandle(int n);[DllImport(\"kernel32.dll\",SetLastError=true)]public static extern bool GetConsoleMode(IntPtr h,out uint m);[DllImport(\"kernel32.dll\",SetLastError=true)]public static extern bool SetConsoleMode(IntPtr h,uint m);}'; $h=[VT]::GetStdHandle(-11); $m=0; if(-not [VT]::GetConsoleMode($h,[ref]$m)){exit 1}; if(-not [VT]::SetConsoleMode($h,($m -bor 4))){exit 1}; exit 0 } catch { exit 1 }" >nul 2>&1
++if not errorlevel 1 set "VT_OK=1"
++goto :eof
++
++rem ------------------------------------------------------------
++rem  In một dòng theo màu. %1 = mã SGR (kết thúc bằng "m"),
++rem  %2 = nội dung. Nếu không có VT, in trắng mặc định.
++rem ------------------------------------------------------------
++:color_echo
++setlocal
++if defined VT_OK (
++  echo %ESC%[%~1%~2%ESC%[0m
++) else (
++  echo %~2
++)
++endlocal
++exit /b
++
++rem ------------------------------------------------------------
++rem  Ghi một dòng log tại %LOCALAPPDATA%\AITools\logs\
++rem ------------------------------------------------------------
++:log_append
++setlocal EnableDelayedExpansion
++if not exist "%LOCALAPPDATA%\AITools\logs\" mkdir "%LOCALAPPDATA%\AITools\logs" 2>nul
++set "LINE=%~1"
++>>"%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log" echo !LINE!
++endlocal
++exit /b
++
++rem ------------------------------------------------------------
++rem  Hợp đồng bước: %1 = tên bước, %2 = lệnh chạy.
++rem  Ghi đúng một dòng log (ok/fail), thoát 0/nonzero.
++rem ------------------------------------------------------------
++:run_step
++setlocal EnableDelayedExpansion
++set "STEP=%~1"
++set "CMD=%~2"
++call %CMD%
++set "RC=!errorlevel!"
++if "!RC!"=="0" (
++  call :log_append "!STEP! | ok | - | - | %date% %time%"
++) else (
++  call :log_append "!STEP! | fail | - | - | %date% %time%"
++  set "FAIL_MSG=Đã xảy ra lỗi ở bước !STEP!. Công cụ thoát an toàn. Vui lòng chạy lại để thử lại."
++  call :color_echo "1;31m" "!FAIL_MSG!"
++)
++endlocal & exit /b %RC%
++
++rem ------------------------------------------------------------
++rem  Dừng đợi một phím bất kỳ (không hiện dòng tiếng Anh).
++rem ------------------------------------------------------------
++:press_any_key
++<nul set /p "=Bấm phím bất kỳ để tiếp tục... "
++pause >nul 2>nul
++echo.
++exit /b
++
++rem ========================= [router] ==========================
++
++:router
++call :init_colors
++if /i "%~1"=="--uninstall" goto :stub_uninstall
++if /i "%~1"=="--update"    goto :stub_update
++if "%~1"==""               goto :run_install
++goto :unknown_mode
++
++rem --------------------------- install ---------------------------
++:run_install
++call :run_step "welcome" "call :welcome_block"
++call :run_step "scan"    "call :scan_block"
++exit /b 0
++
++:welcome_block
++call :color_echo "38;5;214m" "         *"
++call :color_echo "38;5;214m" "        / \"
++call :color_echo "38;5;214m" "       /   \"
++call :color_echo "38;5;214m" "      /     \"
++call :color_echo "38;5;214m" "     /       \"
++call :color_echo "38;5;214m" "     *********"
++call :color_echo "38;5;214m" "     \       /"
++call :color_echo "38;5;214m" "      \     /"
++call :color_echo "38;5;214m" "       \   /"
++call :color_echo "38;5;214m" "        \ /"
++call :color_echo "38;5;214m" "         *"
++echo.
++call :color_echo "1;97m" "      %TOOL_NAME%"
++call :color_echo "1;97m" "     ────────────────────"
++call :color_echo "2;90m" "   %TOOL_SLOGAN%"
++call :color_echo "1;97m" "     Phiên bản %TOOL_VERSION%"
++echo.
++call :color_echo "1;97m" "   %TOOL_INTRO%"
++echo.
++call :press_any_key
++exit /b 0
++
++:scan_block
++call :color_echo "1;97m" "Bước quét máy chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
++call :color_echo "2;90m" "Phiên bản mới sẽ có tính năng này. Công cụ thoát an toàn."
++call :press_any_key
++exit /b 0
++
++rem --------------------------- uninstall ---------------------------
++:stub_uninstall
++call :color_echo "1;97m" "Gỡ cài đặt chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
++call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
++call :log_append "uninstall | skip | - | - | %date% %time%"
++exit /b 0
++
++rem --------------------------- self-update ---------------------------
++:stub_update
++call :color_echo "1;97m" "Cập nhật chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
++call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
++call :log_append "update | skip | - | - | %date% %time%"
++exit /b 0
++
++rem --------------------------- mode không hợp lệ ---------------------------
++:unknown_mode
++call :color_echo "1;97m" "Chế độ không hợp lệ."
++call :color_echo "2;90m" "Công cụ thoát an toàn. Chạy lại AI_Tools_Installer.bat để cài đặt."
++call :log_append "router | fail | - | - | %date% %time%"
++exit /b 0
