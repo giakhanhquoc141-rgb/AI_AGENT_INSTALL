@@ -68,6 +68,22 @@ endlocal
 exit /b
 
 rem ------------------------------------------------------------
+rem  Thanh tiến trình theo mục cài đặt, có spinner nhẹ khi chờ.
+rem  Phần trăm là tiến độ pipeline (không giả mạo phần trăm byte tải).
+rem ------------------------------------------------------------
+:progress_step
+set "PROGRESS_INDEX=%~1"
+set "PROGRESS_NAME=%~2"
+set /a PROGRESS_PCT=(PROGRESS_INDEX*100)/7
+set /a PROGRESS_SLOT=PROGRESS_INDEX%%4
+set "PROGRESS_SPINNER=|"
+if "%PROGRESS_SLOT%"=="1" set "PROGRESS_SPINNER=/"
+if "%PROGRESS_SLOT%"=="2" set "PROGRESS_SPINNER=-"
+if "%PROGRESS_SLOT%"=="3" set "PROGRESS_SPINNER=\\"
+powershell -NoProfile -Command "$p=[int]$env:PROGRESS_PCT;$n=[string]$env:PROGRESS_NAME;$s=[string]$env:PROGRESS_SPINNER;$done=[math]::Floor($p/5);$bar=('#'*$done)+('.'*(20-$done));Write-Host ('  '+$s+' ['+$bar+'] '+$p.ToString('D3')+([char]37)+'  '+$n)"
+exit /b 0
+
+rem ------------------------------------------------------------
 rem  Ghi một dòng log tại %LOCALAPPDATA%\AITools\logs\
 rem ------------------------------------------------------------
 :log_append
@@ -432,24 +448,31 @@ call :color_echo "1;97m" "Bước 4/6 — Cài đặt — còn 2 bước"
 echo.
 call :color_echo "2;90m" "Đang cài đặt các mục trong kế hoạch..."
 echo.
+call :progress_step 1 "Node.js"
 call :try_install_node
 if errorlevel 1 (set "RESULT_Node=fail") else if not defined RESULT_Node set "RESULT_Node=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 2 "Git"
 call :try_install_git
 if errorlevel 1 (set "RESULT_Git=fail") else if not defined RESULT_Git set "RESULT_Git=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 3 "Python"
 call :try_install_python
 if errorlevel 1 (set "RESULT_Python=fail") else if not defined RESULT_Python set "RESULT_Python=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 4 "Visual Studio Code"
 call :try_install_vscode
 if errorlevel 1 (set "RESULT_VSCode=fail") else if not defined RESULT_VSCode set "RESULT_VSCode=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 5 "Claude Code extension"
 call :try_install_vscodeext
 if errorlevel 1 (set "RESULT_VSCodeExt=fail") else if not defined RESULT_VSCodeExt set "RESULT_VSCodeExt=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 6 "OpenClaw"
 call :try_install_openclaw
 if errorlevel 1 (set "RESULT_OpenClaw=fail") else if not defined RESULT_OpenClaw set "RESULT_OpenClaw=ok"
 if errorlevel 1 set "EXEC_RC=1"
+call :progress_step 7 "9Router"
 call :try_install_9router
 if errorlevel 1 (set "RESULT_9Router=fail") else if not defined RESULT_9Router set "RESULT_9Router=ok"
 if errorlevel 1 set "EXEC_RC=1"
@@ -470,6 +493,7 @@ set "RESULT_Combo="
 set "RESULT_Autostart="
 set "RESULT_Onboarding="
 call :color_echo "1;97m" "Bước 5/6 — Cấu hình lần đầu — combo, khởi động cùng Windows và dashboard"
+call :progress_step 7 "Cấu hình combo và tự khởi động"
 echo.
 call :configure_9router_combo
 if errorlevel 1 (set "RESULT_Combo=fail") else set "RESULT_Combo=ok"
