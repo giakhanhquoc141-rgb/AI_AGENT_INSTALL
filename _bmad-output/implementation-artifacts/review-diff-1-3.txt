@@ -1,0 +1,112 @@
+diff --git a/AI_Tools_Installer.bat b/AI_Tools_Installer.bat
+index ce1536f..20737a3 100644
+--- a/AI_Tools_Installer.bat
++++ b/AI_Tools_Installer.bat
+@@ -104,7 +104,7 @@ call :run_step "welcome" ":welcome_block"
+ if errorlevel 1 set "PIPELINE_RC=1"
+ call :scan_block
+ if errorlevel 1 set "PIPELINE_RC=1"
+-call :run_step "plan" ":plan_block"
++call :plan_block
+ if errorlevel 1 set "PIPELINE_RC=1"
+ exit /b %PIPELINE_RC%
+ 
+@@ -226,9 +226,95 @@ exit /b 0
+ 
+ rem --------------------------- plan ---------------------------
+ :plan_block
+-call :color_echo "1;97m" "Bước lập kế hoạch cài đặt chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
+-call :color_echo "2;90m" "Phiên bản mới sẽ có tính năng này. Công cụ thoát an toàn."
+-call :press_any_key
++setlocal EnableDelayedExpansion
++rem --- Guard: cần đủ run-state scan (ST_*) mới lập kế hoạch ---
++set "PLAN_MISSING="
++if not defined ST_Git set "PLAN_MISSING=1"
++if not defined ST_Node set "PLAN_MISSING=1"
++if not defined ST_Python set "PLAN_MISSING=1"
++if not defined ST_VSCode set "PLAN_MISSING=1"
++if not defined ST_VSCodeExt set "PLAN_MISSING=1"
++if not defined ST_OpenClaw set "PLAN_MISSING=1"
++if not defined ST_9Router set "PLAN_MISSING=1"
++if defined PLAN_MISSING (
++  call :color_echo "1;31m" "Không đủ dữ liệu quét máy để lập kế hoạch. Công cụ thoát an toàn."
++  call :log_append "plan | skip | insufficient-scan | - | %date% %time%"
++  endlocal
++  exit /b 0
++)
++
++call :color_echo "1;97m" "Bước 3/6 — Kế hoạch cài đặt — còn 3 bước"
++call :color_echo "2;90m" "Chưa có gì thay đổi trên máy cho tới khi bạn xác nhận."
++echo.
++
++set "PLAN_INSTALL=0"
++set "PLAN_UPDATE=0"
++set "PLAN_SKIP=0"
++
++call :plan_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
++call :plan_count "!ST_Git!"
++call :plan_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
++call :plan_count "!ST_Node!"
++call :plan_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
++call :plan_count "!ST_Python!"
++call :plan_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
++call :plan_count "!ST_VSCode!"
++call :plan_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
++call :plan_count "!ST_VSCodeExt!"
++call :plan_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
++call :plan_count "!ST_OpenClaw!"
++call :plan_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
++call :plan_count "!ST_9Router!"
++
++echo.
++call :color_echo "1;97m" "Tổng kết: !PLAN_INSTALL! cài mới · !PLAN_UPDATE! cập nhật · !PLAN_SKIP! bỏ qua"
++echo.
++call :color_echo "2;90m" "Bấm C để tiếp tục, H để hủy an toàn."
++choice /c CH /n /m "  (C/H) "
++if errorlevel 2 goto :plan_cancel
++call :color_echo "1;32m" "Đã xác nhận. Bắt đầu cài đặt..."
++call :log_append "plan | ok | confirmed | - | %date% %time%"
++endlocal
++exit /b 0
++
++:plan_cancel
++call :color_echo "1;33m" "Đã hủy. Không có gì trên máy bị thay đổi."
++call :color_echo "2;90m" "Bạn có thể chạy lại bất cứ lúc nào."
++call :log_append "plan | skip | cancelled | - | %date% %time%"
++endlocal
++exit /b 0
++
++:plan_item
++rem %1 = tên hiển thị, %2 = quyết định, %3 = phiên bản hiện tại, %4 = phiên bản mới nhất
++setlocal EnableDelayedExpansion
++set "PNAME=%~1"
++set "PST=%~2"
++set "PVR=%~3"
++set "PVL=%~4"
++if /i "!PST!"=="INSTALL" (
++  if "!PVL!"=="-" (
++    call :color_echo "1;97m" "  !PNAME! — cài mới"
++  ) else (
++    call :color_echo "1;97m" "  !PNAME! — cài mới — bản mới nhất !PVL!"
++  )
++) else if /i "!PST!"=="UPDATE" (
++  if "!PVL!"=="-" (
++    call :color_echo "1;97m" "  !PNAME! — cập nhật — !PVR!"
++  ) else (
++    call :color_echo "1;97m" "  !PNAME! — cập nhật — !PVR! sang !PVL!"
++  )
++) else if /i "!PVR!"=="installed" (
++  call :color_echo "2;90m" "  !PNAME! — bỏ qua — đã cài"
++) else (
++  call :color_echo "2;90m" "  !PNAME! — bỏ qua — đã cài !PVR!"
++)
++endlocal
++exit /b 0
++
++:plan_count
++if /i "%~1"=="INSTALL" set /a PLAN_INSTALL+=1
++if /i "%~1"=="UPDATE" set /a PLAN_UPDATE+=1
++if /i "%~1"=="SKIP" set /a PLAN_SKIP+=1
+ exit /b 0
+ 
+ rem --------------------------- uninstall ---------------------------

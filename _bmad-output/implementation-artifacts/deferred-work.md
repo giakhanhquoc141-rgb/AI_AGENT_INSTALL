@@ -33,3 +33,11 @@ Các mục phát hiện trong review nhưng không thuộc phạm vi story hiệ
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-quét-quyết-định-phiên-bản-7-mục.md`
   summary: Tái cấu trúc khối PowerShell scan (hiện ~4.6KB, 8 biến, gần giới hạn dòng cmd 8191 ký tự) — thêm comment, tách hàm, ghi chú protocol `item|cur|latest|decision`.
   evidence: Blind-hunter review — dòng lệnh đơn khổng lồ không comment, coupling giữa PS và `:scan_parse`/`:show_item` ngầm, rủi ro truncation khi mở rộng. Không chặn story; cải tiến maintainability để sau.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-kế-hoạch-cài-đặt-xác-nhận-y-n.md`
+  summary: Cancel/insufficient-scan đều return exit 0 từ `plan_block` — pipeline chưa phân biệt "hủy" với "đã xác nhận"; khi execute phase xuất hiện (story 1.4), hủy vẫn sẽ chạy tiếp vào cài đặt.
+  evidence: Intent-alignment + blind-hunter review — `:plan_block` (các nhánh cancel/guard tại `AI_Tools_Installer.bat:274-284`) exit /b 0; `:run_install` chỉ gate theo errorlevel 1. Intent yêu cầu "H → thoát sạch"; cần tín hiệu hủy riêng (flag hoặc RC) để pipeline dừng — xử lý khi story 1.4 thêm execute.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-kế-hoạch-cài-đặt-xác-nhận-y-n.md`
+  summary: Thêm test regression cho surface plan/confirm (render 7 mục, tổng kết, nhánh `choice` C/H, dòng log ok/skip).
+  evidence: Verification-gap review — `unit.ps1` chỉ assert helper quyết định version; `offline-test.bat`/`partial-test.bat` vẫn dừng ở stub plan cũ. Cùng khoảng trống test harness chung đã ghi ở các item story 1-1/1-2.
