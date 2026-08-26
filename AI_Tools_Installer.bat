@@ -154,6 +154,8 @@ if errorlevel 1 set "PIPELINE_RC=1"
 if defined PLAN_ABORT goto :run_install_end
 call :execute_block
 if errorlevel 1 set "PIPELINE_RC=1"
+call :configure_block
+if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_end
 exit /b %PIPELINE_RC%
 
@@ -391,6 +393,46 @@ if "%EXEC_RC%"=="0" (
   call :color_echo "1;31m" "Bước cài đặt có lỗi ở một hoặc nhiều mục. Xem log để biết chi tiết."
 )
 exit /b %EXEC_RC%
+
+rem --------------------------- configure ---------------------------
+rem Tạo đúng một combo qua API quản trị cục bộ của 9Router. API này chỉ
+rem đọc/ghi danh sách combo; tuyệt đối không gửi hoặc đọc API key.
+:configure_block
+set "CONFIGURE_RC=0"
+call :color_echo "1;97m" "Bước 5/6 — Cấu hình 9Router — tạo combo my-combo"
+echo.
+call :configure_9router_combo
+if errorlevel 1 set "CONFIGURE_RC=1"
+if "%CONFIGURE_RC%"=="0" (
+  call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng (deepseek-v4-flash + 3 đường dự phòng)."
+) else (
+  call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
+)
+exit /b %CONFIGURE_RC%
+
+:configure_9router_combo
+if not defined LOCALAPPDATA goto :configure_combo_fail
+set "COMBO_URL=http://127.0.0.1:20128/api/combos"
+set "COMBO_RESULT="
+set "COMBO_ACTION="
+set "COMBO_VERSION=deepseek-v4-flash"
+
+rem 9Router quản lý combo qua /api/combos (GET/POST/PUT). Không gửi Authorization.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+ "$ErrorActionPreference='Stop';$u=$env:COMBO_URL;$want=@('oc/deepseek-v4-flash-free','openrouter/deepseek-v4-flash','ds/deepseek-v4-flash');$payload=[ordered]@{name='my-combo';models=$want}|ConvertTo-Json -Compress;$r=Invoke-RestMethod -Uri $u -Method Get -UseBasicParsing -TimeoutSec 10;$all=@();if($r.combos){$all=@($r.combos)}elseif($r -is [array]){$all=@($r)};$found=$all|?{$_.name -eq 'my-combo'}|Select-Object -First 1;if($found){$actual=@($found.models|ForEach-Object {[string]$_});$same=($actual.Count -eq $want.Count -and (($actual -join [char]0x1f) -ceq ($want -join [char]0x1f)));if(-not $same){if(-not $found.id){throw 'combo-id-missing'};Invoke-RestMethod -Uri ($u+'/'+[uri]::EscapeDataString([string]$found.id)) -Method Put -Body $payload -ContentType 'application/json' -UseBasicParsing -TimeoutSec 10|Out-Null;$action='updated'}else{$action='skipped'}}else{Invoke-RestMethod -Uri $u -Method Post -Body $payload -ContentType 'application/json' -UseBasicParsing -TimeoutSec 10|Out-Null;$action='created'};[IO.File]::WriteAllText($env:TEMP+'\aitools-combo-result.txt',$action,[Text.UTF8Encoding]::new($false))" >nul 2>nul
+if errorlevel 1 goto :configure_combo_fail
+if exist "%TEMP%\aitools-combo-result.txt" for /f "usebackq delims=" %%a in ("%TEMP%\aitools-combo-result.txt") do set "COMBO_ACTION=%%a"
+if exist "%TEMP%\aitools-combo-result.txt" del /f /q "%TEMP%\aitools-combo-result.txt" >nul 2>nul
+if not defined COMBO_ACTION goto :configure_combo_fail
+call :manifest_append "9Router combo my-combo" "%COMBO_VERSION%" "%COMBO_URL%"
+if errorlevel 1 goto :configure_combo_fail
+call :log_append "configure | ok | %COMBO_VERSION% | my-combo (%COMBO_ACTION%) | %date% %time%"
+exit /b 0
+
+:configure_combo_fail
+if exist "%TEMP%\aitools-combo-result.txt" del /f /q "%TEMP%\aitools-combo-result.txt" >nul 2>nul
+call :log_append "configure | fail | %COMBO_VERSION% | my-combo | %date% %time%"
+exit /b 1
 
 :try_install_node
 if /i "%ST_Node%"=="INSTALL" goto :try_install_node_run
