@@ -156,6 +156,8 @@ call :execute_block
 if errorlevel 1 set "PIPELINE_RC=1"
 call :configure_block
 if errorlevel 1 set "PIPELINE_RC=1"
+call :report_block
+if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_end
 exit /b %PIPELINE_RC%
 
@@ -368,23 +370,37 @@ exit /b 0
 rem --------------------------- execute ---------------------------
 :execute_block
 set "EXEC_RC=0"
+set "RESULT_Node="
+set "RESULT_Git="
+set "RESULT_Python="
+set "RESULT_VSCode="
+set "RESULT_VSCodeExt="
+set "RESULT_OpenClaw="
+set "RESULT_9Router="
 call :color_echo "1;97m" "Bước 4/6 — Cài đặt — còn 2 bước"
 echo.
 call :color_echo "2;90m" "Đang cài đặt các mục trong kế hoạch..."
 echo.
 call :try_install_node
+if errorlevel 1 (set "RESULT_Node=fail") else if not defined RESULT_Node set "RESULT_Node=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_git
+if errorlevel 1 (set "RESULT_Git=fail") else if not defined RESULT_Git set "RESULT_Git=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_python
+if errorlevel 1 (set "RESULT_Python=fail") else if not defined RESULT_Python set "RESULT_Python=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_vscode
+if errorlevel 1 (set "RESULT_VSCode=fail") else if not defined RESULT_VSCode set "RESULT_VSCode=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_vscodeext
+if errorlevel 1 (set "RESULT_VSCodeExt=fail") else if not defined RESULT_VSCodeExt set "RESULT_VSCodeExt=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_openclaw
+if errorlevel 1 (set "RESULT_OpenClaw=fail") else if not defined RESULT_OpenClaw set "RESULT_OpenClaw=ok"
 if errorlevel 1 set "EXEC_RC=1"
 call :try_install_9router
+if errorlevel 1 (set "RESULT_9Router=fail") else if not defined RESULT_9Router set "RESULT_9Router=ok"
 if errorlevel 1 set "EXEC_RC=1"
 echo.
 if "%EXEC_RC%"=="0" (
@@ -399,9 +415,13 @@ rem Tạo đúng một combo qua API quản trị cục bộ của 9Router. API 
 rem đọc/ghi danh sách combo; tuyệt đối không gửi hoặc đọc API key.
 :configure_block
 set "CONFIGURE_RC=0"
+set "RESULT_Combo="
+set "RESULT_Autostart="
+set "RESULT_Onboarding="
 call :color_echo "1;97m" "Bước 5/6 — Cấu hình lần đầu — combo, khởi động cùng Windows và dashboard"
 echo.
 call :configure_9router_combo
+if errorlevel 1 (set "RESULT_Combo=fail") else set "RESULT_Combo=ok"
 if errorlevel 1 set "CONFIGURE_RC=1"
 if "%CONFIGURE_RC%"=="0" (
   call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng (deepseek-v4-flash + 3 đường dự phòng)."
@@ -409,8 +429,10 @@ if "%CONFIGURE_RC%"=="0" (
   call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
 )
 call :configure_autostart
+if errorlevel 1 (set "RESULT_Autostart=fail") else set "RESULT_Autostart=ok"
 if errorlevel 1 set "CONFIGURE_RC=1"
 call :configure_onboarding
+if errorlevel 1 (set "RESULT_Onboarding=fail") else set "RESULT_Onboarding=ok"
 if errorlevel 1 set "CONFIGURE_RC=1"
 exit /b %CONFIGURE_RC%
 
@@ -490,6 +512,37 @@ start "" "http://127.0.0.1:18789"
 if errorlevel 1 goto :onboarding_fail
 call :log_append "configure | ok | - | dashboards localhost:20128, 127.0.0.1:18789 | %date% %time%"
 exit /b 0
+
+rem ----------------------------- report -----------------------------
+rem Báo cáo cuối luôn chạy sau configure. Log cũ được giữ nguyên.
+:report_block
+setlocal EnableDelayedExpansion
+set "REPORT_TOTAL=10"
+set "REPORT_OK=0"
+set "REPORT_FAIL=0"
+set "REPORT_ERRORS="
+for %%I in (Node Git Python VSCode VSCodeExt OpenClaw 9Router Combo Autostart Onboarding) do (
+  if /i "!RESULT_%%I!"=="fail" (
+    set /a REPORT_FAIL+=1
+    if defined REPORT_ERRORS (set "REPORT_ERRORS=!REPORT_ERRORS!, %%I") else set "REPORT_ERRORS=%%I"
+  ) else (
+    set /a REPORT_OK+=1
+  )
+)
+if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
+set "REPORT_LOG=%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log"
+if "!REPORT_FAIL!"=="0" (
+  set "REPORT_STATUS=ok"
+  call :color_echo "1;32m" "Bước 6/6 — Hoàn tất: !REPORT_OK!/!REPORT_TOTAL! mục thành công."
+) else (
+  set "REPORT_STATUS=fail"
+  call :color_echo "1;33m" "Bước 6/6 — Hoàn tất: !REPORT_OK!/!REPORT_TOTAL! mục thành công, !REPORT_FAIL! mục lỗi."
+  call :color_echo "1;31m" "  Mục lỗi: !REPORT_ERRORS!"
+  call :color_echo "2;90m" "  Vui lòng chạy lại công cụ để thử lại các mục lỗi."
+)
+call :color_echo "2;90m" "  Nhật ký được lưu tại: !REPORT_LOG!"
+call :log_append "report | !REPORT_STATUS! | !REPORT_OK!/!REPORT_TOTAL! | !REPORT_LOG! | %date% %time%"
+endlocal & exit /b 0
 
 :onboarding_fail
 call :log_append "configure | fail | - | dashboards | %date% %time%"
