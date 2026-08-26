@@ -28,8 +28,9 @@
 # - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
+# Release: v0.4.0 (2026-08-26) — hỏi-cập-nhật, tiến trình thật, logo mới
 generated: 08-16-2026 08:18
-last_updated: 08-26-2026 17:00
+last_updated: 08-26-2026 19:40
 project: AI_AGENT_INSTALL
 project_key: NOKEY
 tracking_system: file-system
