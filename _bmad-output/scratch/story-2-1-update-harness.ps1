@@ -4,7 +4,7 @@ $bat = Get-Content -Raw (Join-Path $root 'AI_Tools_Installer.bat')
 $checks = [ordered]@{
   'router-update' = $bat.Contains('if /i "%~1"=="--update" goto :early_update')
   'official-releases-api' = $bat.Contains('api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest')
-  'no-auto-download' = -not ($bat.Substring($bat.IndexOf(':early_update'), $bat.IndexOf(':early_uninstall') - $bat.IndexOf(':early_update')).Contains('Invoke-WebRequest'))
+  'auto-download-asset' = $bat.Contains('AI_Tools_Installer\.bat') -and $bat.Contains('call :self_update_replace')
   'safe-fallback' = $bat.Contains('Không thể kiểm tra cập nhật; bản hiện tại vẫn an toàn.')
   'no-credential' = -not ($bat.Substring($bat.IndexOf(':early_update'), $bat.IndexOf(':early_uninstall') - $bat.IndexOf(':early_update')) -match '(?i)(api[_-]?key|authorization|bearer|secret)')
 }

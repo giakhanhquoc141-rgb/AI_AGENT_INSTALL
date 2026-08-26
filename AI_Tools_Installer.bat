@@ -20,8 +20,16 @@ if /i "%~1"=="--uninstall" goto :uninstall_manifest
 goto :router
 
 :early_update
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';$u='https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest';try{$r=Invoke-RestMethod -Uri $u -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 15;$t=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($t)){Write-Output 'Chưa có bản phát hành chính thức.'}else{Write-Output ('Bản mới nhất: '+$t)}}catch{Write-Output 'Không thể kiểm tra cập nhật; bản hiện tại vẫn an toàn.'}"
-exit /b 0
+set "UPDATE_STATE="
+set "UPDATE_LATEST="
+set "UPDATE_URL="
+for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri 'https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest' -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 15;$a=$r.assets|?{$_.name -match '(?i)^AI_Tools_Installer\.bat$'}|Select-Object -First 1;if($null -eq $a){'none||'}else{'found|'+([string]$r.tag_name).TrimStart('v','V')+'|'+$a.browser_download_url}}catch{'error||'}"') do (set "UPDATE_STATE=%%a" & set "UPDATE_LATEST=%%b" & set "UPDATE_URL=%%c")
+if /i "%UPDATE_STATE%"=="error" (echo Không thể kiểm tra cập nhật; bản hiện tại vẫn an toàn. & goto :installer_exit)
+if /i not "%UPDATE_STATE%"=="found" (echo Chưa có bản phát hành có asset AI_Tools_Installer.bat. & goto :installer_exit)
+for /f "delims=" %%v in ('powershell -NoProfile -Command "$a='%TOOL_VERSION%';$b='%UPDATE_LATEST%';try{if([version]$b -gt [version]$a){'new'}else{'current'}}catch{'new'}"') do set "UPDATE_COMPARE=%%v"
+if /i not "%UPDATE_COMPARE%"=="new" (echo Bạn đang dùng bản mới nhất: %TOOL_VERSION%. & goto :installer_exit)
+call :self_update_replace "%UPDATE_URL%" "%UPDATE_LATEST%"
+goto :installer_exit
 
 :early_uninstall
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$root=$env:LOCALAPPDATA;$m=Join-Path $root 'AITools\manifest.txt';if(-not (Test-Path -LiteralPath $m)){exit 0};$allowed=@((Join-Path $root 'node'),(Join-Path $root 'Programs\Git'),(Join-Path $root 'Programs\Python\Python313'),(Join-Path $root 'Programs\Microsoft VS Code'));foreach($line in [IO.File]::ReadLines($m)){ $f=$line -split ' \| ',4;if($f.Count -ne 4){continue};$p=[Environment]::ExpandEnvironmentVariables($f[3]).TrimEnd('\');if($allowed -contains $p -and (Test-Path -LiteralPath $p)){Remove-Item -LiteralPath $p -Recurse -Force}};Remove-Item -LiteralPath $m -Force -ErrorAction SilentlyContinue;Remove-Item -LiteralPath (Join-Path $root 'AITools\logs\ai-tools-installer.log') -Force -ErrorAction SilentlyContinue"
