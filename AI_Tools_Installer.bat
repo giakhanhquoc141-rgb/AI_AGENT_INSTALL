@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.1.0"
+set "TOOL_VERSION=0.2.1"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -203,8 +203,17 @@ rem ========================= [router] ==========================
 :router
 if /i "%~1"=="--uninstall" goto :uninstall_manifest
 if /i "%~1"=="--update"    goto :stub_update
-if "%~1"==""               goto :run_install
+if "%~1"==""               goto :startup_update_check
 goto :unknown_mode
+
+:startup_update_check
+set "STARTUP_UPDATE_STATE="
+set "STARTUP_UPDATE_LATEST="
+for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri 'https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest' -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 8;$t=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($t)){'none|'}else{'found|'+$t.TrimStart('v','V')}}catch{'error|'}"') do (set "STARTUP_UPDATE_STATE=%%a" & set "STARTUP_UPDATE_LATEST=%%b")
+if /i "%STARTUP_UPDATE_STATE%"=="found" echo Kiểm tra cập nhật: bản phát hành mới nhất %STARTUP_UPDATE_LATEST% (đang dùng %TOOL_VERSION%).
+if /i "%STARTUP_UPDATE_STATE%"=="error" echo Kiểm tra cập nhật tạm thời không khả dụng; tiếp tục an toàn.
+if /i "%STARTUP_UPDATE_STATE%"=="none" echo Chưa có bản phát hành chính thức; tiếp tục cài đặt.
+goto :run_install
 
 rem --------------------------- install ---------------------------
 :run_install
