@@ -425,10 +425,24 @@ call :color_echo "1;97m" "  Python — đang cài đặt..."
 call :install_python
 exit /b %errorlevel%
 :try_install_vscode
-call :try_install_stub "%ST_VSCode%" "VSCode"
+if /i "%ST_VSCode%"=="INSTALL" goto :try_install_vscode_run
+if /i "%ST_VSCode%"=="UPDATE" goto :try_install_vscode_run
+call :color_echo "2;90m" "  Visual Studio Code — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | VSCode | %date% %time%"
+exit /b 0
+:try_install_vscode_run
+call :color_echo "1;97m" "  Visual Studio Code — đang cài đặt..."
+call :install_vscode
 exit /b %errorlevel%
 :try_install_vscodeext
-call :try_install_stub "%ST_VSCodeExt%" "VSCodeExt"
+if /i "%ST_VSCodeExt%"=="INSTALL" goto :try_install_vscodeext_run
+if /i "%ST_VSCodeExt%"=="UPDATE" goto :try_install_vscodeext_run
+call :color_echo "2;90m" "  Claude Code — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | VSCodeExt | %date% %time%"
+exit /b 0
+:try_install_vscodeext_run
+call :color_echo "1;97m" "  Claude Code — đang cài đặt..."
+call :install_vscodeext
 exit /b %errorlevel%
 :try_install_openclaw
 call :try_install_stub "%ST_OpenClaw%" "OpenClaw"
@@ -441,6 +455,164 @@ exit /b %errorlevel%
 if /i "%~1"=="INSTALL" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
 if /i "%~1"=="UPDATE" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
 exit /b 0
+
+:install_vscode
+rem --- VS Code User Setup x64, per-user only; installer must not auto-run ---
+if not defined LOCALAPPDATA goto :ivsc_unknown
+set "VSCODE_DIR=%LOCALAPPDATA%\Programs\Microsoft VS Code"
+set "VSCODE_CODE=%VSCODE_DIR%\bin\code.cmd"
+set "VSCODE_URL=https://update.code.visualstudio.com/latest/win32-x64-user/stable"
+for /f "delims=" %%g in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "VSCODE_TX_ID=%%g"
+if not defined VSCODE_TX_ID goto :ivsc_backup_fail
+set "VSCODE_INSTALLER=%TEMP%\aitools-vscode-user-%VSCODE_TX_ID%.exe"
+set "VSCODE_BACKUP=%TEMP%\aitools-vscode-backup-%VSCODE_TX_ID%"
+set "VSCODE_MANIFEST=%LOCALAPPDATA%\AITools\manifest.txt"
+set "VSCODE_MANIFEST_BACKUP=%TEMP%\aitools-vscode-manifest-%VSCODE_TX_ID%.bak"
+set "VSCODE_PATH_STATE=%TEMP%\aitools-vscode-path-%VSCODE_TX_ID%.xml"
+set "VSCODE_OLD_PATH=%PATH%"
+set "VSCODE_HAD_OLD=0"
+if exist "%VSCODE_INSTALLER%" goto :ivsc_backup_fail
+if exist "%VSCODE_BACKUP%\" goto :ivsc_backup_fail
+if exist "%VSCODE_MANIFEST_BACKUP%" goto :ivsc_backup_fail
+if exist "%VSCODE_PATH_STATE%" goto :ivsc_backup_fail
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment');try{if($null -eq $k){[pscustomobject]@{Exists=$false;Value='';Kind='ExpandString'}|Export-Clixml -LiteralPath $env:VSCODE_PATH_STATE}else{[pscustomobject]@{Exists=$true;Value=[string]$k.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);Kind=$k.GetValueKind('Path').ToString()}|Export-Clixml -LiteralPath $env:VSCODE_PATH_STATE}}finally{if($k){$k.Dispose()}}" >nul 2>nul
+if errorlevel 1 goto :ivsc_backup_fail
+if exist "%VSCODE_DIR%\" (
+  move /y "%VSCODE_DIR%" "%VSCODE_BACKUP%" >nul 2>nul
+  if errorlevel 1 goto :ivsc_backup_fail
+  set "VSCODE_HAD_OLD=1"
+)
+if exist "%VSCODE_MANIFEST%" (
+  copy /b /y "%VSCODE_MANIFEST%" "%VSCODE_MANIFEST_BACKUP%" >nul 2>nul
+  if errorlevel 1 goto :ivsc_backup_fail
+  if not exist "%VSCODE_MANIFEST_BACKUP%" goto :ivsc_backup_fail
+)
+call :vscode_download
+if errorlevel 1 goto :ivsc_package_fail
+call :vscode_signature
+if errorlevel 1 goto :ivsc_package_fail
+rem Inno Setup User Setup flags: no UAC/all-users and suppress auto-run.
+start "" /wait "%VSCODE_INSTALLER%" /VERYSILENT /NORESTART /MERGETASKS=!runcode >nul 2>nul
+if errorlevel 1 goto :ivsc_install_fail
+if not exist "%VSCODE_CODE%" goto :ivsc_verify_fail
+call :path_append "%%LOCALAPPDATA%%\Programs\Microsoft VS Code\bin"
+if errorlevel 1 goto :ivsc_path_fail
+set "VSCODE_VERSION="
+for /f "delims=" %%v in ('"%VSCODE_CODE%" --version 2^>nul') do if not defined VSCODE_VERSION set "VSCODE_VERSION=%%v"
+if not defined VSCODE_VERSION goto :ivsc_verify_fail
+call :manifest_append "VSCode" "%VSCODE_VERSION%" "%VSCODE_DIR%"
+if errorlevel 1 goto :ivsc_manifest_fail
+set "VSCODE_ROLLBACK_RC=0"
+call :ivsc_cleanup
+if errorlevel 1 exit /b 1
+call :log_append "install | ok | %VSCODE_VERSION% | VSCode | %date% %time%"
+call :color_echo "1;32m" "  Visual Studio Code đã cài xong (User Setup)."
+exit /b 0
+
+:vscode_download
+for /l %%r in (1,1,3) do (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest -Uri $env:VSCODE_URL -OutFile $env:VSCODE_INSTALLER -UseBasicParsing" >nul 2>nul
+  if not errorlevel 1 if exist "%VSCODE_INSTALLER%" exit /b 0
+  if exist "%VSCODE_INSTALLER%" del /f /q "%VSCODE_INSTALLER%" >nul 2>nul
+)
+exit /b 1
+
+:vscode_signature
+rem Signature validation is mandatory when Authenticode is available.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$c=Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue;if($null -eq $c){exit 0};$s=Get-AuthenticodeSignature -LiteralPath $env:VSCODE_INSTALLER;if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'Microsoft Corporation'){exit 1};exit 0" >nul 2>nul
+exit /b %errorlevel%
+
+:ivsc_unknown
+call :color_echo "1;31m" "  Không xác định được thư mục dữ liệu người dùng. Bỏ qua VS Code."
+call :log_append "install | fail | unknown-user-target | VSCode | %date% %time%"
+exit /b 1
+:ivsc_backup_fail
+call :color_echo "1;31m" "  Không thể sao lưu VS Code hiện có; không thay đổi gì trên máy."
+call :ivsc_rollback
+call :log_append "install | fail | backup-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_package_fail
+call :color_echo "1;31m" "  Tải hoặc xác minh bộ cài VS Code thất bại sau 3 lần thử. Kiểm tra kết nối rồi chạy lại."
+call :ivsc_rollback
+call :log_append "install | fail | download-or-signature-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_install_fail
+call :color_echo "1;31m" "  Bộ cài VS Code không hoàn tất. Bản hiện có được phục hồi."
+call :ivsc_rollback
+call :log_append "install | fail | installer-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_verify_fail
+call :color_echo "1;31m" "  VS Code chưa sẵn sàng hoặc có thể cần User Setup không yêu cầu quản trị."
+call :ivsc_rollback
+call :log_append "install | fail | verify-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_path_fail
+call :ivsc_rollback
+call :log_append "install | fail | path-write-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_manifest_fail
+call :ivsc_rollback
+call :log_append "install | fail | manifest-write-failed | VSCode | %date% %time%"
+exit /b 1
+:ivsc_rollback
+set "VSCODE_ROLLBACK_RC=0"
+set "PATH=%VSCODE_OLD_PATH%"
+if exist "%VSCODE_PATH_STATE%" powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$s=Import-Clixml -LiteralPath $env:VSCODE_PATH_STATE;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');try{if($s.Exists){$k.SetValue('Path',[string]$s.Value,[Microsoft.Win32.RegistryValueKind]::$($s.Kind))}else{$k.DeleteValue('Path',$false)}}finally{$k.Dispose()}" >nul 2>nul
+if errorlevel 1 set "VSCODE_ROLLBACK_RC=1"
+if "%VSCODE_HAD_OLD%"=="1" (
+  if exist "%VSCODE_BACKUP%\" (
+    if exist "%VSCODE_DIR%\" rmdir /s /q "%VSCODE_DIR%" >nul 2>nul
+    move /y "%VSCODE_BACKUP%" "%VSCODE_DIR%" >nul 2>nul
+    if errorlevel 1 set "VSCODE_ROLLBACK_RC=1"
+  ) else set "VSCODE_ROLLBACK_RC=1"
+) else if exist "%VSCODE_DIR%\" (
+  rmdir /s /q "%VSCODE_DIR%" >nul 2>nul
+  if exist "%VSCODE_DIR%\" set "VSCODE_ROLLBACK_RC=1"
+)
+if "%VSCODE_HAD_OLD%"=="0" if not exist "%VSCODE_MANIFEST_BACKUP%" if exist "%VSCODE_MANIFEST%" del /f /q "%VSCODE_MANIFEST%" >nul 2>nul
+if exist "%VSCODE_MANIFEST_BACKUP%" (
+  copy /b /y "%VSCODE_MANIFEST_BACKUP%" "%VSCODE_MANIFEST%" >nul 2>nul
+  if errorlevel 1 set "VSCODE_ROLLBACK_RC=1"
+)
+call :ivsc_cleanup
+if errorlevel 1 set "VSCODE_ROLLBACK_RC=1"
+if "%VSCODE_ROLLBACK_RC%"=="1" call :color_echo "1;31m" "  Phục hồi VS Code chưa hoàn tất; tệp sao lưu được giữ lại để khôi phục thủ công."
+exit /b %VSCODE_ROLLBACK_RC%
+:ivsc_cleanup
+set "VSCODE_CLEANUP_RC=0"
+if exist "%VSCODE_INSTALLER%" del /f /q "%VSCODE_INSTALLER%" >nul 2>nul
+if exist "%VSCODE_INSTALLER%" set "VSCODE_CLEANUP_RC=1"
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_MANIFEST_BACKUP%" del /f /q "%VSCODE_MANIFEST_BACKUP%" >nul 2>nul
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_PATH_STATE%" del /f /q "%VSCODE_PATH_STATE%" >nul 2>nul
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_BACKUP%\" rmdir /s /q "%VSCODE_BACKUP%" >nul 2>nul
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_MANIFEST_BACKUP%" set "VSCODE_CLEANUP_RC=1"
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_PATH_STATE%" set "VSCODE_CLEANUP_RC=1"
+if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_BACKUP%\" set "VSCODE_CLEANUP_RC=1"
+exit /b %VSCODE_CLEANUP_RC%
+
+:install_vscodeext
+if not defined LOCALAPPDATA goto :ivse_missing
+set "VSCODE_DIR=%LOCALAPPDATA%\Programs\Microsoft VS Code"
+set "VSCODE_CODE=%LOCALAPPDATA%\Programs\Microsoft VS Code\bin\code.cmd"
+if not exist "%VSCODE_CODE%" goto :ivse_missing
+set "VSCODE_EXT_OLD_PATH=%PATH%"
+set "PATH=%VSCODE_DIR%\bin;%PATH%"
+"%VSCODE_CODE%" --install-extension anthropic.claude-code --force >nul 2>nul
+if errorlevel 1 goto :ivse_fail
+set "VSCODE_EXT_FOUND="
+for /f "delims=" %%e in ('"%VSCODE_CODE%" --list-extensions 2^>nul') do if /i "%%e"=="anthropic.claude-code" set "VSCODE_EXT_FOUND=1"
+if not defined VSCODE_EXT_FOUND goto :ivse_fail
+call :manifest_append "VSCodeExt" "installed" "%USERPROFILE%\.vscode\extensions\anthropic.claude-code"
+if errorlevel 1 goto :ivse_fail
+call :log_append "install | ok | installed | VSCodeExt | %date% %time%"
+call :color_echo "1;32m" "  Claude Code đã cài xong."
+exit /b 0
+:ivse_missing
+call :color_echo "1;31m" "  Không tìm thấy VS Code; Claude Code sẽ được thử lại ở lần chạy sau."
+:ivse_fail
+set "PATH=%VSCODE_EXT_OLD_PATH%"
+call :log_append "install | fail | extension-verify-failed | VSCodeExt | %date% %time%"
+exit /b 1
 
 :install_python
 if not defined LOCALAPPDATA goto :ipy_unknown
