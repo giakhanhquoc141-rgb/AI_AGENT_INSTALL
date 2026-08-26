@@ -3,7 +3,7 @@ title: 'Cài OpenClaw và 9Router qua npm'
 type: 'feature'
 created: '2026-08-26'
 baseline_commit: '8f96b36ca417d9269f9b9576cb7f9ee89edaa943'
-status: 'in-progress'
+status: 'done'
 review_loop_iteration: 0
 context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 ---
