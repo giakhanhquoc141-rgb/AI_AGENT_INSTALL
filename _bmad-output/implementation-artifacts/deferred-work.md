@@ -41,3 +41,19 @@ Các mục phát hiện trong review nhưng không thuộc phạm vi story hiệ
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-kế-hoạch-cài-đặt-xác-nhận-y-n.md`
   summary: Thêm test regression cho surface plan/confirm (render 7 mục, tổng kết, nhánh `choice` C/H, dòng log ok/skip).
   evidence: Verification-gap review — `unit.ps1` chỉ assert helper quyết định version; `offline-test.bat`/`partial-test.bat` vẫn dừng ở stub plan cũ. Cùng khoảng trống test harness chung đã ghi ở các item story 1-1/1-2.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-cài-node-per-user-refresh-path-trong-phiên.md`
+  summary: Node UPDATE xóa toàn bộ `%LOCALAPPDATA%\node` (gồm `node_modules`) — sẽ mất npm global (openclaw/9router) nếu chúng được cài vào đó trước khi Node cập nhật.
+  evidence: Blind-hunter + design review — `:install_node` dùng staging + `Remove-Item %NODE_DIR%` khi UPDATE. Node cài trước npm-items (1.8) nên lần đầu không mất; lần chạy sau sẽ xóa sạch npm global. Cần npm prefix riêng (`%LOCALAPPDATA%\npm`) hoặc preserve `node_modules` khi xử lý story 1.8.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-cài-node-per-user-refresh-path-trong-phiên.md`
+  summary: Tải về chưa xác minh SHA256 — chỉ check kích thước >0; file hỏng/truncate chỉ lộ khi giải nén.
+  evidence: Blind-hunter — AD-7 yêu cầu "xác minh SHA256 nơi nguồn cung cấp hash" (nodejs.org có SHASUMS256.txt). Hiện file hỏng dừng ở `extract-fail` (có thông báo), không âm thầm; thêm check hash khi hardening chung.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-cài-node-per-user-refresh-path-trong-phiên.md`
+  summary: Thêm test tự động cho execute surface — `:execute_block`/`:install_node`/`:path_append`/`:manifest_append` + guard `PLAN_ABORT`.
+  evidence: Verification-gap review — scratch tay đã verify nhưng không commit; `unit.ps1`/`offline-test.bat`/`partial-test.bat` không chứa symbol mới. Cùng khoảng trống test harness chung ở các item 1-1/1-2/1-3.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-cài-node-per-user-refresh-path-trong-phiên.md`
+  summary: Fallback `LOCALAPPDATA=%TEMP%` (nếu biến không tồn tại) khiến Node cài vào `%TEMP%\node` nhưng manifest/PATH ghi `%LOCALAPPDATA%\node` — hai đường dẫn lệch.
+  evidence: Đọc `:install_node` và `:manifest_append`/`:path_append` — chỉ xảy ra khi LOCALAPPDATA thực sự undefined (hiếm trên Windows); rà khi mở rộng execute cho các mục khác.

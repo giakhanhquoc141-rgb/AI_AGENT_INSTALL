@@ -88,6 +88,102 @@ pause >nul 2>nul
 echo.
 exit /b
 
+rem ------------------------------------------------------------
+rem  PATH-controller: thêm một mục vào PATH người dùng.
+rem  %1 = mục PATH dạng mở rộng (ví dụ %%LOCALAPPDATA%%\node).
+rem  Đọc HKCU\Environment Path -> append-if-absent (không phân biệt
+rem  hoa thường) -> ghi lại giữ REG_EXPAND_SZ -> refresh %PATH% trong
+rem  phiên từ registry. Không setx, không cắt/truncate, không trùng.
+rem ------------------------------------------------------------
+:path_append
+setlocal EnableDelayedExpansion
+set "PA_ENTRY=%~1"
+if "%PA_ENTRY%"=="" endlocal & exit /b 0
+rem --- Nếu mục nằm trong %LOCALAPPDATA%, ghi dạng mở rộng %LOCALAPPDATA%\node để giữ REG_EXPAND_SZ ---
+set "PA_EXPANDED=%LOCALAPPDATA%\node"
+set "PA_STORE=!PA_ENTRY!"
+if /i "!PA_ENTRY!"=="!PA_EXPANDED!" set "PA_STORE=%%LOCALAPPDATA%%\node"
+
+rem --- Đọc PATH hiện tại + kiểu từ registry (REG_SZ phải lưu dạng đã mở rộng) ---
+set "PA_TYPE=REG_SZ"
+for /f "skip=2 tokens=2" %%t in ('reg query "HKCU\Environment" /v Path 2^>nul') do if /i "%%t"=="REG_EXPAND_SZ" set "PA_TYPE=REG_EXPAND_SZ"
+if "!PA_TYPE!"=="REG_SZ" set "PA_STORE=!PA_EXPANDED!"
+set "PA_V1="
+set "PA_V2="
+for /f "skip=2 tokens=3,*" %%a in ('reg query "HKCU\Environment" /v Path 2^>nul') do (
+  set "PA_V1=%%a"
+  set "PA_V2=%%b"
+)
+if not defined PA_V1 goto :pa_create
+set "PA_VAL=!PA_V1!"
+if defined PA_V2 set "PA_VAL=!PA_V1! !PA_V2!"
+
+rem --- Append-if-absent (so sánh từng mục, không phân biệt hoa thường) ---
+set "PA_FOUND="
+set "PA_REST_ALL=!PA_VAL!"
+:pa_check_loop
+set "PA_SEG="
+set "PA_REST="
+for /f "tokens=1,* delims=;" %%a in ("!PA_REST_ALL!") do (
+  set "PA_SEG=%%a"
+  set "PA_REST=%%b"
+)
+if not defined PA_SEG goto :pa_check_done
+if /i "%PA_SEG%"=="!PA_STORE!" set "PA_FOUND=1"
+if /i "%PA_SEG%"=="!PA_EXPANDED!" set "PA_FOUND=1"
+set "PA_REST_ALL=!PA_REST!"
+goto :pa_check_loop
+:pa_check_done
+if not defined PA_FOUND set "PA_VAL=!PA_VAL!;!PA_STORE!"
+goto :pa_write
+
+:pa_create
+set "PA_VAL=!PA_STORE!"
+
+:pa_write
+reg add "HKCU\Environment" /v Path /t %PA_TYPE% /d "!PA_VAL!" /f >nul
+if errorlevel 1 (
+  endlocal
+  exit /b 1
+)
+
+rem --- Refresh %PATH% trong phiên: prepend entry dạng đã mở rộng. Registry giữ dạng
+rem     %LOCALAPPDATA%\node (REG_EXPAND_SZ) cho phiên sau; cmd không mở rộng %VAR%
+rem     bên trong PATH khi tìm lệnh, nên phiên hiện tại phải dùng đường dẫn đã mở rộng. ---
+set "PA_ENTRY_EXP=!PA_STORE!"
+set "PA_ENTRY_EXP=!PA_ENTRY_EXP:%%LOCALAPPDATA%%=%LOCALAPPDATA%!"
+set "PA_SESSION=!PATH!"
+set "PATH=!PA_ENTRY_EXP!;!PA_SESSION!"
+endlocal & set "PATH=%PATH%"
+exit /b 0
+
+rem ------------------------------------------------------------
+rem  Ghi manifest %LOCALAPPDATA%\AITools\manifest.txt (append nếu
+rem  chưa có dòng này). %1 = item, %2 = phiên bản, %3 = đường dẫn.
+rem  Định dạng: item | version | installed-at-YYYY-MM-DD | path (AD-5).
+rem ------------------------------------------------------------
+:manifest_append
+setlocal EnableDelayedExpansion
+set "MA_ITEM=%~1"
+set "MA_VER=%~2"
+set "MA_PATH=%~3"
+rem --- Nếu đường dẫn nằm trong %LOCALAPPDATA%, ghi dạng mở rộng %LOCALAPPDATA%\node ---
+set "MA_EXPANDED=%LOCALAPPDATA%\node"
+if /i "!MA_PATH!"=="!MA_EXPANDED!" set "MA_PATH=%%LOCALAPPDATA%%\node"
+for /f "delims=" %%d in ('powershell -NoProfile -Command "[Console]::Write((Get-Date -Format yyyy-MM-dd))"') do set "MA_DATE=%%d"
+set "MA_LINE=!MA_ITEM! | !MA_VER! | !MA_DATE! | !MA_PATH!"
+if not exist "%LOCALAPPDATA%\AITools\" mkdir "%LOCALAPPDATA%\AITools" 2>nul
+if exist "%LOCALAPPDATA%\AITools\manifest.txt" (
+  findstr /i /b /c:"!MA_ITEM! | !MA_VER! |" "%LOCALAPPDATA%\AITools\manifest.txt" >nul 2>nul
+  if not errorlevel 1 (
+    endlocal
+    exit /b 0
+  )
+)
+>>"%LOCALAPPDATA%\AITools\manifest.txt" echo(!MA_LINE!
+endlocal
+exit /b 0
+
 rem ========================= [router] ==========================
 
 :router
@@ -100,12 +196,17 @@ goto :unknown_mode
 rem --------------------------- install ---------------------------
 :run_install
 set "PIPELINE_RC=0"
+set "PLAN_ABORT="
 call :run_step "welcome" ":welcome_block"
 if errorlevel 1 set "PIPELINE_RC=1"
 call :scan_block
 if errorlevel 1 set "PIPELINE_RC=1"
 call :plan_block
 if errorlevel 1 set "PIPELINE_RC=1"
+if defined PLAN_ABORT goto :run_install_end
+call :execute_block
+if errorlevel 1 set "PIPELINE_RC=1"
+:run_install_end
 exit /b %PIPELINE_RC%
 
 :welcome_block
@@ -239,8 +340,7 @@ if not defined ST_9Router set "PLAN_MISSING=1"
 if defined PLAN_MISSING (
   call :color_echo "1;31m" "Không đủ dữ liệu quét máy để lập kế hoạch. Công cụ thoát an toàn."
   call :log_append "plan | skip | insufficient-scan | - | %date% %time%"
-  endlocal
-  exit /b 0
+  endlocal & set "PLAN_ABORT=1" & exit /b 0
 )
 
 call :color_echo "1;97m" "Bước 3/6 — Kế hoạch cài đặt — còn 3 bước"
@@ -274,15 +374,13 @@ choice /c CH /n /m "  (C/H) "
 if errorlevel 2 goto :plan_cancel
 call :color_echo "1;32m" "Đã xác nhận. Bắt đầu cài đặt..."
 call :log_append "plan | ok | confirmed | - | %date% %time%"
-endlocal
-exit /b 0
+endlocal & set "PLAN_ABORT=" & exit /b 0
 
 :plan_cancel
 call :color_echo "1;33m" "Đã hủy. Không có gì trên máy bị thay đổi."
 call :color_echo "2;90m" "Bạn có thể chạy lại bất cứ lúc nào."
 call :log_append "plan | skip | cancelled | - | %date% %time%"
-endlocal
-exit /b 0
+endlocal & set "PLAN_ABORT=1" & exit /b 0
 
 :plan_item
 rem %1 = tên hiển thị, %2 = quyết định, %3 = phiên bản hiện tại, %4 = phiên bản mới nhất
@@ -316,6 +414,138 @@ if /i "%~1"=="INSTALL" set /a PLAN_INSTALL+=1
 if /i "%~1"=="UPDATE" set /a PLAN_UPDATE+=1
 if /i "%~1"=="SKIP" set /a PLAN_SKIP+=1
 exit /b 0
+
+rem --------------------------- execute ---------------------------
+:execute_block
+set "EXEC_RC=0"
+call :color_echo "1;97m" "Bước 4/6 — Cài đặt — còn 2 bước"
+echo.
+call :color_echo "2;90m" "Đang cài đặt các mục trong kế hoạch..."
+echo.
+if /i "%ST_Node%"=="INSTALL" goto :execute_node
+if /i "%ST_Node%"=="UPDATE" goto :execute_node
+call :color_echo "2;90m" "  Node.js — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | Node | %date% %time%"
+goto :execute_others
+
+:execute_node
+call :color_echo "1;97m" "  Node.js — đang cài đặt..."
+call :install_node
+if errorlevel 1 set "EXEC_RC=1"
+goto :execute_others
+
+:execute_others
+if /i "%ST_Git%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | Git | %date% %time%"
+) else if /i "%ST_Git%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | Git | %date% %time%"
+)
+if /i "%ST_Python%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | Python | %date% %time%"
+) else if /i "%ST_Python%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | Python | %date% %time%"
+)
+if /i "%ST_VSCode%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | VSCode | %date% %time%"
+) else if /i "%ST_VSCode%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | VSCode | %date% %time%"
+)
+if /i "%ST_VSCodeExt%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | VSCodeExt | %date% %time%"
+) else if /i "%ST_VSCodeExt%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | VSCodeExt | %date% %time%"
+)
+if /i "%ST_OpenClaw%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | OpenClaw | %date% %time%"
+) else if /i "%ST_OpenClaw%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | OpenClaw | %date% %time%"
+)
+if /i "%ST_9Router%"=="INSTALL" (
+  call :log_append "install | skip | not-supported-yet | 9Router | %date% %time%"
+) else if /i "%ST_9Router%"=="UPDATE" (
+  call :log_append "install | skip | not-supported-yet | 9Router | %date% %time%"
+)
+echo.
+if "%EXEC_RC%"=="0" (
+  call :color_echo "1;32m" "Bước cài đặt hoàn tất."
+) else (
+  call :color_echo "1;31m" "Bước cài đặt có lỗi ở một hoặc nhiều mục. Xem log để biết chi tiết."
+)
+exit /b %EXEC_RC%
+
+:install_node
+rem --- Tiền đề: cần phiên bản Node xác định và đúng định dạng x.y.z để cài (VL_Node) ---
+if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
+if "%VL_Node%"=="" goto :inode_unknown
+if "%VL_Node%"=="-" goto :inode_unknown
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if('%VL_Node%' -match '^\d+\.\d+\.\d+$'){exit 0}else{exit 1}"
+if errorlevel 1 goto :inode_unknown
+
+echo.
+call :color_echo "1;97m" "  Đang tải Node.js %VL_Node% từ nguồn chính thức..."
+
+set "NODE_VER=%VL_Node%"
+set "NODE_URL=https://nodejs.org/dist/v%VL_Node%/node-v%VL_Node%-win-x64.zip"
+set "NODE_ZIP=%TEMP%\node-v%VL_Node%-win-x64.zip"
+set "NODE_STAGE=%TEMP%\node-stage-%VL_Node%"
+set "NODE_DIR=%LOCALAPPDATA%\node"
+
+rem --- Tải ZIP (retry 3, $ProgressPreference='SilentlyContinue') ---
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$u='%NODE_URL%';$o='%NODE_ZIP%';$ok=$false;for($i=0;$i -lt 3;$i++){try{Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 120;if((Get-Item $o -ErrorAction SilentlyContinue).Length -gt 0){$ok=$true;break}}catch{if($i -ge 2){break};Start-Sleep -Milliseconds 500}};if(-not $ok){exit 1};exit 0"
+if errorlevel 1 goto :inode_download_fail
+
+echo.
+call :color_echo "1;97m" "  Đã tải xong. Đang giải nén vào %LOCALAPPDATA%\node ..."
+
+rem --- Giải nén qua thư mục tạm rồi thay thế %LOCALAPPDATA%\node (sạch, an toàn khi chạy lại) ---
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$stage='%NODE_STAGE%';if(Test-Path $stage){Remove-Item -LiteralPath $stage -Recurse -Force};New-Item -ItemType Directory -Path $stage|Out-Null;Expand-Archive -LiteralPath '%NODE_ZIP%' -DestinationPath $stage -Force;$inner=Get-ChildItem -LiteralPath $stage -Directory|Select-Object -First 1;if($null -eq $inner){exit 1};if(Test-Path '%NODE_DIR%'){Remove-Item -LiteralPath '%NODE_DIR%' -Recurse -Force};Move-Item -LiteralPath $inner.FullName -Destination '%NODE_DIR%';exit 0"
+if errorlevel 1 goto :inode_extract_fail
+
+rem --- Thêm PATH người dùng (PATH-controller, không setx) ---
+call :path_append "%%LOCALAPPDATA%%\node"
+if errorlevel 1 goto :inode_path_fail
+
+rem --- Verify node + npm chạy ngay trong phiên (PATH đã refresh) ---
+node --version >nul 2>nul
+if errorlevel 1 goto :inode_verify_fail
+call npm --version >nul 2>nul
+if errorlevel 1 goto :inode_verify_fail
+
+rem --- Ghi manifest (append nếu chưa có) ---
+call :manifest_append "Node" "%NODE_VER%" "%NODE_DIR%"
+
+call :log_append "install | ok | %NODE_VER% | %NODE_DIR% | %date% %time%"
+if exist "%NODE_ZIP%" del /f /q "%NODE_ZIP%" >nul 2>nul
+if exist "%NODE_STAGE%" rmdir /s /q "%NODE_STAGE%" >nul 2>nul
+call :color_echo "1;32m" "  Node.js %NODE_VER% đã cài xong."
+exit /b 0
+
+:inode_unknown
+call :color_echo "1;31m" "  Không xác định được phiên bản Node.js để cài. Bỏ qua."
+call :color_echo "2;90m" "  Kiểm tra kết nối mạng rồi chạy lại. Không có gì trên máy bị thay đổi."
+call :log_append "install | skip | unknown-version | - | %date% %time%"
+exit /b 0
+
+:inode_download_fail
+call :color_echo "1;31m" "  Tải Node.js %VL_Node% thất bại. Kiểm tra kết nối mạng rồi chạy lại."
+call :color_echo "2;90m" "  Lỗi tải một mục không làm ảnh hưởng các mục khác."
+call :log_append "install | fail | %VL_Node% | download-failed | %date% %time%"
+exit /b 1
+
+:inode_extract_fail
+call :color_echo "1;31m" "  Giải nén Node.js thất bại. Chạy lại để thử lần nữa."
+call :log_append "install | fail | %VL_Node% | extract-failed | %date% %time%"
+exit /b 1
+
+:inode_verify_fail
+call :color_echo "1;31m" "  Đã cài Node.js nhưng lệnh node/npm chưa chạy được. Kiểm tra PATH rồi chạy lại."
+call :log_append "install | fail | %VL_Node% | verify-failed | %date% %time%"
+exit /b 1
+
+:inode_path_fail
+call :color_echo "1;31m" "  Không ghi được PATH người dùng. Kiểm tra quyền rồi chạy lại."
+call :log_append "install | fail | %VL_Node% | path-write-failed | %date% %time%"
+exit /b 1
 
 rem --------------------------- uninstall ---------------------------
 :stub_uninstall
