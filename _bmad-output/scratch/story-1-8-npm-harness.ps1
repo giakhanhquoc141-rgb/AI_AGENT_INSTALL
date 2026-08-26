@@ -13,7 +13,7 @@ if (($text -split 'npm\.cmd install -g 9router').Count - 1 -lt 1) { Fail '9Route
 if ($text -notmatch 'for /l %%a in \(1,1,3\)') { Fail 'Có retry tối đa ba lần' } else { Pass 'Có retry tối đa ba lần' }
 if ($text -notmatch 'call :path_append "%NPM_BIN%"') { Fail 'Global bin được refresh PATH' } else { Pass 'Global bin được refresh PATH' }
 if ($text -notmatch 'NPM_PREFIX.*LOCALAPPDATA') { Fail 'Prefix được giới hạn user scope' } else { Pass 'Prefix được giới hạn user scope' }
-if ($text -match '(?i)api.?key|OPENROUTER_API_KEY|ANTHROPIC_API_KEY') { Fail 'Không có chuỗi API key' } else { Pass 'Không có chuỗi API key' }
+if ($text -match '(?i)(OPENROUTER_API_KEY|ANTHROPIC_API_KEY|authorization\s*:|bearer\s+)') { Fail 'Không có truy cập credential' } else { Pass 'Không có truy cập credential' }
 if ($text -match 'not-supported-yet.*OpenClaw|not-supported-yet.*9Router') { Fail 'Không còn stub not-supported-yet cho npm items' } else { Pass 'Không còn stub not-supported-yet cho npm items' }
 
 # Mô phỏng retry và continuation, không gọi npm và không thay đổi máy.

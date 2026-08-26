@@ -16,7 +16,7 @@ set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần 
 
 rem Early lifecycle routes stay outside the legacy parenthesized blocks.
 if /i "%~1"=="--update" goto :early_update
-if /i "%~1"=="--uninstall" goto :early_uninstall
+if /i "%~1"=="--uninstall" goto :uninstall_manifest
 goto :router
 
 :early_update
@@ -1302,7 +1302,7 @@ if not exist "%UNINSTALL_RESULT%" (
   call :log_append "uninstall | fail | - | execution | %date% %time%"
   exit /b 1
 )
-for /f "tokens=1-4 delims^=^|" %%a in (%UNINSTALL_RESULT%) do (set "UNINSTALL_STATE=%%a" & set "UNINSTALL_REMOVED=%%b" & set "UNINSTALL_SKIPPED=%%c" & set "UNINSTALL_FAILED=%%d")
+for /f "usebackq tokens=1-4 delims=|" %%a in ("%UNINSTALL_RESULT%") do (set "UNINSTALL_STATE=%%a" & set "UNINSTALL_REMOVED=%%b" & set "UNINSTALL_SKIPPED=%%c" & set "UNINSTALL_FAILED=%%d")
 del /f /q "%UNINSTALL_RESULT%" >nul 2>nul
 if not "%UNINSTALL_STATE%"=="ok" if not "%UNINSTALL_FAILED%"=="0" (
   call :color_echo "1;31m" "Một số artifact không thể gỡ; manifest được giữ nguyên."

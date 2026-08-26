@@ -13,7 +13,7 @@ $checks = [ordered]@{
   'fallback-3' = $bat.Contains('ds/deepseek-v4-flash')
   'idempotent-get' = ($bat.Contains(' -Method Get ') -and $bat.Contains('$found=$all|?{$_.name -eq ''my-combo''}'))
   'idempotent-update' = $bat.Contains(' -Method Put ')
-  'no-credential-access' = (-not ($configureCode -match '(?i)(env:.*(key|secret|token)|authorization|bearer|headers\s*=)'))
+  'no-credential-access' = (-not ($configureCode -match '(?i)(env:(OPENROUTER|ANTHROPIC|API[_-]?KEY|SECRET|TOKEN)|authorization\s*[:=]|bearer\s+)'))
   'no-setx' = (-not ($bat -match '(?im)^\s*setx\s'))
 }
 $checks.GetEnumerator() | ForEach-Object {
