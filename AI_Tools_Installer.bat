@@ -127,10 +127,41 @@ set "MA_ITEM=%~1"
 set "MA_VER=%~2"
 set "MA_PATH=%~3"
 if not defined LOCALAPPDATA endlocal & exit /b 1
+if not defined MA_ITEM endlocal & exit /b 1
+if not defined MA_VER endlocal & exit /b 1
+if not defined MA_PATH endlocal & exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
- "$ErrorActionPreference='Stop';$root=Join-Path $env:LOCALAPPDATA 'AITools';[IO.Directory]::CreateDirectory($root)|Out-Null;$file=Join-Path $root 'manifest.txt';$path=$env:MA_PATH;$local=$env:LOCALAPPDATA;if($path -ieq $local){$path='%%LOCALAPPDATA%%'}elseif($path.StartsWith($local+'\',[StringComparison]::OrdinalIgnoreCase)){$path='%%LOCALAPPDATA%%'+$path.Substring($local.Length)};$norm={param($v)([Environment]::ExpandEnvironmentVariables([string]$v)).Trim().TrimEnd('\')};if(Test-Path -LiteralPath $file){$found=[IO.File]::ReadLines($file)|?{$f=$_.Split(@(' | '),[StringSplitOptions]::None);$f.Count -ge 4 -and $f[0] -ieq $env:MA_ITEM -and $f[1] -ieq $env:MA_VER -and (& $norm $f[3]) -ieq (& $norm $path)}|Select-Object -First 1;if($found){exit 0}};$line=$env:MA_ITEM+' | '+$env:MA_VER+' | '+(Get-Date -Format yyyy-MM-dd)+' | '+$path+[Environment]::NewLine;[IO.File]::AppendAllText($file,$line,[Text.UTF8Encoding]::new($false))" >nul 2>nul
+  "$ErrorActionPreference='Stop';$item=[string]$env:MA_ITEM;$ver=[string]$env:MA_VER;$raw=[string]$env:MA_PATH;if($item -match '[\r\n|]' -or $ver -match '[\r\n|]' -or $raw -match '[\r\n|]'){exit 2};$root=Join-Path $env:LOCALAPPDATA 'AITools';[IO.Directory]::CreateDirectory($root)|Out-Null;$file=Join-Path $root 'manifest.txt';$path=$raw;$local=$env:LOCALAPPDATA;if($path -ieq $local){$path='%%LOCALAPPDATA%%'}elseif($path.StartsWith($local+'\',[StringComparison]::OrdinalIgnoreCase)){$path='%%LOCALAPPDATA%%'+$path.Substring($local.Length)};$norm={param($v)([Environment]::ExpandEnvironmentVariables([string]$v)).Trim().TrimEnd('\')};if(Test-Path -LiteralPath $file){$found=[IO.File]::ReadLines($file)|?{$f=$_.Split(@(' | '),[StringSplitOptions]::None);$f.Count -eq 4 -and $f[0] -ieq $item -and $f[1] -ieq $ver -and (& $norm $f[3]) -ieq (& $norm $path)}|Select-Object -First 1;if($found){exit 0}};$line=$item+' | '+$ver+' | '+(Get-Date -Format yyyy-MM-dd)+' | '+$path+[Environment]::NewLine;[IO.File]::AppendAllText($file,$line,[Text.UTF8Encoding]::new($false))" >nul 2>nul
 set "MA_RC=%errorlevel%"
 endlocal & exit /b %MA_RC%
+
+rem ------------------------------------------------------------
+rem  Kiểm tra manifest theo schema 4 trường trước khi lifecycle tiếp tục.
+rem  Không sửa dữ liệu và không chạm ngoài thư mục AITools.
+rem ------------------------------------------------------------
+:manifest_validate
+setlocal DisableDelayedExpansion
+if not defined LOCALAPPDATA endlocal & exit /b 1
+set "MV_FILE=%LOCALAPPDATA%\AITools\manifest.txt"
+if not exist "%MV_FILE%" endlocal & exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop';$file=$env:MV_FILE;$bad=0;foreach($line in [IO.File]::ReadLines($file)){if([string]::IsNullOrWhiteSpace($line)){continue};$f=$line.Split(@(' | '),[StringSplitOptions]::None);if($f.Count -ne 4 -or [string]::IsNullOrWhiteSpace($f[0]) -or [string]::IsNullOrWhiteSpace($f[1]) -or $f[2] -notmatch '^\d{4}-\d{2}-\d{2}$' -or [string]::IsNullOrWhiteSpace($f[3]) -or $f[0] -match '[|\r\n]' -or $f[1] -match '[|\r\n]' -or $f[3] -match '[|\r\n]'){$bad++}};if($bad -gt 0){exit 1};exit 0" >nul 2>nul
+set "MV_RC=%errorlevel%"
+endlocal & exit /b %MV_RC%
+
+rem ------------------------------------------------------------
+rem  Dọn lifecycle metadata sau uninstall: chỉ xóa manifest và log
+rem  của AI Tools, không xóa thư mục cài đặt hay dữ liệu ứng dụng khác.
+rem ------------------------------------------------------------
+:manifest_clear
+setlocal DisableDelayedExpansion
+if not defined LOCALAPPDATA endlocal & exit /b 1
+set "MC_ROOT=%LOCALAPPDATA%\AITools"
+if exist "%MC_ROOT%\manifest.txt" del /f /q "%MC_ROOT%\manifest.txt" >nul 2>nul
+if exist "%MC_ROOT%\logs\ai-tools-installer.log" del /f /q "%MC_ROOT%\logs\ai-tools-installer.log" >nul 2>nul
+if exist "%MC_ROOT%\manifest.txt" endlocal & exit /b 1
+if exist "%MC_ROOT%\logs\ai-tools-installer.log" endlocal & exit /b 1
+endlocal & exit /b 0
 
 rem ========================= [router] ==========================
 
