@@ -49,12 +49,12 @@ development_status:
   1-11-log-cục-bộ-báo-cáo-cuối: review
   epic-1-retrospective: optional
 
-  epic-2: in-progress
-  2-1-kiểm-tra-bản-mới-của-tool: review
-  2-2-tự-thay-thế-file-đang-chạy-an-toàn: review
+  epic-2: done
+  2-1-kiểm-tra-bản-mới-của-tool: done
+  2-2-tự-thay-thế-file-đang-chạy-an-toàn: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
-  3-1-manifest-schema-và-vòng-đời: review
-  3-2-gỡ-cài-theo-manifest: review
+  epic-3: done
+  3-1-manifest-schema-và-vòng-đời: done
+  3-2-gỡ-cài-theo-manifest: done
   epic-3-retrospective: optional
