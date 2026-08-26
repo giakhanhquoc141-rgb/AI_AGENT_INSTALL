@@ -445,16 +445,118 @@ call :color_echo "1;97m" "  Claude Code — đang cài đặt..."
 call :install_vscodeext
 exit /b %errorlevel%
 :try_install_openclaw
-call :try_install_stub "%ST_OpenClaw%" "OpenClaw"
+if /i "%ST_OpenClaw%"=="INSTALL" goto :try_install_openclaw_run
+if /i "%ST_OpenClaw%"=="UPDATE" goto :try_install_openclaw_run
+call :color_echo "2;90m" "  OpenClaw — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | OpenClaw | %date% %time%"
+exit /b 0
+:try_install_openclaw_run
+call :color_echo "1;97m" "  OpenClaw — đang cài đặt qua npm..."
+call :npm_install_openclaw
 exit /b %errorlevel%
 :try_install_9router
-call :try_install_stub "%ST_9Router%" "9Router"
+if /i "%ST_9Router%"=="INSTALL" goto :try_install_9router_run
+if /i "%ST_9Router%"=="UPDATE" goto :try_install_9router_run
+call :color_echo "2;90m" "  9Router — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | 9Router | %date% %time%"
+exit /b 0
+:try_install_9router_run
+call :color_echo "1;97m" "  9Router — đang cài đặt qua npm..."
+call :npm_install_9router
 exit /b %errorlevel%
 
 :try_install_stub
-if /i "%~1"=="INSTALL" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
-if /i "%~1"=="UPDATE" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
 exit /b 0
+
+rem ---------------------- npm package installers -------------------
+rem Chuẩn bị npm.cmd từ PATH hiện tại, kiểm tra nguồn per-user, rồi
+rem xác định global prefix/bin và refresh PATH trong phiên. Không ghi log.
+:npm_prepare
+set "NPM_CMD="
+set "NPM_SOURCE="
+set "NPM_PREFIX="
+set "NPM_BIN="
+set "NPM_VERSION="
+for /f "delims=" %%p in ('where npm.cmd 2^>nul') do if not defined NPM_SOURCE set "NPM_SOURCE=%%p"
+if not defined NPM_SOURCE exit /b 1
+if not defined LOCALAPPDATA exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_SOURCE);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
+if errorlevel 1 exit /b 1
+set "NPM_CMD=npm.cmd"
+for /f "delims=" %%p in ('npm.cmd prefix -g 2^>nul') do if not defined NPM_PREFIX set "NPM_PREFIX=%%p"
+if not defined NPM_PREFIX exit /b 1
+for /f "delims=" %%p in ('npm.cmd bin -g 2^>nul') do if not defined NPM_BIN set "NPM_BIN=%%p"
+if not defined NPM_BIN set "NPM_BIN=%NPM_PREFIX%"
+for /f "delims=" %%p in ("%NPM_PREFIX%") do set "NPM_PREFIX=%%p"
+for /f "delims=" %%p in ("%NPM_BIN%") do set "NPM_BIN=%%p"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_PREFIX);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
+if errorlevel 1 exit /b 1
+call :path_append "%NPM_BIN%"
+if errorlevel 1 exit /b 1
+for /f "delims=" %%v in ('npm.cmd --version 2^>nul') do if not defined NPM_VERSION set "NPM_VERSION=%%v"
+if not defined NPM_VERSION exit /b 1
+exit /b 0
+
+:npm_install_openclaw
+set "NPM_RESULT_VERSION="
+set "NPM_RESULT_RC=1"
+call :npm_prepare
+if errorlevel 1 goto :npm_openclaw_fail
+set "NPM_ALLOW_SCRIPTS="
+for /f "tokens=1 delims=." %%m in ("%NPM_VERSION%") do set "NPM_MAJOR=%%m"
+if defined NPM_MAJOR powershell -NoProfile -ExecutionPolicy Bypass -Command "if([int]$env:NPM_MAJOR -ge 12){exit 0}else{exit 1}" >nul 2>nul
+if not errorlevel 1 set "NPM_ALLOW_SCRIPTS=--allow-scripts openclaw"
+if "%NPM_MAJOR%"=="12" if not defined NPM_ALLOW_SCRIPTS goto :npm_openclaw_fail
+for /l %%a in (1,1,3) do (
+  if "%NPM_ALLOW_SCRIPTS%"=="" (npm.cmd install -g openclaw@latest >nul 2>nul) else (npm.cmd install -g openclaw@latest %NPM_ALLOW_SCRIPTS% >nul 2>nul)
+  if not errorlevel 1 goto :npm_openclaw_verify
+)
+goto :npm_openclaw_fail
+:npm_openclaw_verify
+for /f "tokens=1,2" %%a in ('openclaw --version 2^>nul') do if not defined NPM_RESULT_VERSION set "NPM_RESULT_VERSION=%%b"
+if not defined NPM_RESULT_VERSION for /f "delims=" %%a in ('openclaw --version 2^>nul') do if not defined NPM_RESULT_VERSION set "NPM_RESULT_VERSION=%%a"
+if not defined NPM_RESULT_VERSION goto :npm_openclaw_fail
+where openclaw >nul 2>nul
+if errorlevel 1 goto :npm_openclaw_fail
+cmd /d /c "openclaw --version" >nul 2>nul
+if errorlevel 1 goto :npm_openclaw_fail
+call :manifest_append "OpenClaw" "%NPM_RESULT_VERSION%" "%NPM_BIN%"
+if errorlevel 1 goto :npm_openclaw_fail
+call :log_append "install | ok | %NPM_RESULT_VERSION% | OpenClaw | %date% %time%"
+call :color_echo "1;32m" "  OpenClaw %NPM_RESULT_VERSION% đã cài xong."
+exit /b 0
+:npm_openclaw_fail
+call :color_echo "1;31m" "  Cài OpenClaw thất bại. Kiểm tra Node/npm và chạy lại; 9Router vẫn được thử độc lập."
+call :log_append "install | fail | npm | OpenClaw | %date% %time%"
+exit /b 1
+
+:npm_install_9router
+set "NPM_RESULT_VERSION="
+call :npm_prepare
+if errorlevel 1 goto :npm_9router_fail
+for /l %%a in (1,1,3) do (
+  npm.cmd install -g 9router >nul 2>nul
+  if not errorlevel 1 goto :npm_9router_verify
+)
+goto :npm_9router_fail
+:npm_9router_verify
+for /f "delims=" %%a in ('9router --version 2^>nul') do if not defined NPM_RESULT_VERSION set "NPM_RESULT_VERSION=%%a"
+if not defined NPM_RESULT_VERSION goto :npm_9router_fail
+for /f "delims=" %%a in ('powershell -NoProfile -Command "$m=[regex]::Match($env:NPM_RESULT_VERSION, '\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?');if($m.Success){$m.Value}"') do set "NPM_RESULT_VERSION=%%a"
+if not defined NPM_RESULT_VERSION goto :npm_9router_fail
+where 9router >nul 2>nul
+if errorlevel 1 goto :npm_9router_fail
+cmd /d /c "9router --version" >nul 2>nul
+if errorlevel 1 goto :npm_9router_fail
+call :manifest_append "9Router" "%NPM_RESULT_VERSION%" "%NPM_BIN%"
+if errorlevel 1 goto :npm_9router_fail
+call :log_append "install | ok | %NPM_RESULT_VERSION% | 9Router | %date% %time%"
+call :color_echo "1;32m" "  9Router %NPM_RESULT_VERSION% đã cài xong."
+exit /b 0
+:npm_9router_fail
+call :color_echo "1;31m" "  Cài 9Router thất bại. Kiểm tra Node/npm rồi chạy lại."
+call :log_append "install | fail | npm | 9Router | %date% %time%"
+exit /b 1
 
 :install_vscode
 rem --- VS Code User Setup x64, per-user only; installer must not auto-run ---
