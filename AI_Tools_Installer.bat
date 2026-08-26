@@ -399,7 +399,7 @@ rem Tạo đúng một combo qua API quản trị cục bộ của 9Router. API 
 rem đọc/ghi danh sách combo; tuyệt đối không gửi hoặc đọc API key.
 :configure_block
 set "CONFIGURE_RC=0"
-call :color_echo "1;97m" "Bước 5/6 — Cấu hình 9Router — tạo combo my-combo"
+call :color_echo "1;97m" "Bước 5/6 — Cấu hình lần đầu — combo, khởi động cùng Windows và dashboard"
 echo.
 call :configure_9router_combo
 if errorlevel 1 set "CONFIGURE_RC=1"
@@ -408,6 +408,10 @@ if "%CONFIGURE_RC%"=="0" (
 ) else (
   call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
 )
+call :configure_autostart
+if errorlevel 1 set "CONFIGURE_RC=1"
+call :configure_onboarding
+if errorlevel 1 set "CONFIGURE_RC=1"
 exit /b %CONFIGURE_RC%
 
 :configure_9router_combo
@@ -432,6 +436,64 @@ exit /b 0
 :configure_combo_fail
 if exist "%TEMP%\aitools-combo-result.txt" del /f /q "%TEMP%\aitools-combo-result.txt" >nul 2>nul
 call :log_append "configure | fail | %COMBO_VERSION% | my-combo | %date% %time%"
+exit /b 1
+
+rem --------------------- autostart + onboarding ---------------------
+rem Run key dùng HKCU, không cần UAC. PowerShell được chạy ẩn và khởi
+rem chạy tiến trình đích ẩn để không nhấp nháy cửa sổ console khi đăng nhập.
+:configure_autostart
+set "AUTOSTART_RC=0"
+if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
+set "AUTOSTART_ID="
+for /f "delims=" %%g in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "AUTOSTART_ID=%%g"
+if not defined AUTOSTART_ID goto :autostart_fail
+set "AUTOSTART_RESULT=%TEMP%\aitools-autostart-%AUTOSTART_ID%.txt"
+set "AUTOSTART_9R_TARGET=powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command Start-Process -FilePath '9router.cmd' -ArgumentList @('--no-browser','--skip-update') -WindowStyle Hidden"
+set "AUTOSTART_OC_TARGET=openclaw gateway install"
+
+rem 9Router: chỉ ghi HKCU Run khi value chưa có hoặc khác target đã quản lý.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+ "$ErrorActionPreference='Stop';$name='AI Tools Installer - 9Router';$target=$env:AUTOSTART_9R_TARGET;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Run');try{$old=[string]$k.GetValue($name,'',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);$changed=($old -cne $target);if($changed){$k.SetValue($name,$target,[Microsoft.Win32.RegistryValueKind]::String)};[IO.File]::WriteAllText($env:AUTOSTART_RESULT,('9router|'+$(if($changed){'registered'}else{'existing'})+'|'+$target),[Text.UTF8Encoding]::new($false))}finally{$k.Dispose()}" >nul 2>nul
+if errorlevel 1 goto :autostart_fail
+if not exist "%AUTOSTART_RESULT%" goto :autostart_fail
+for /f "usebackq tokens=1,2,* delims=|" %%a in ("%AUTOSTART_RESULT%") do set "AUTOSTART_9R_STATE=%%b"
+if /i not "%AUTOSTART_9R_STATE%"=="existing" if /i not "%AUTOSTART_9R_STATE%"=="registered" goto :autostart_fail
+call :manifest_append "Autostart:HKCU Run:AI Tools Installer - 9Router" "registered" "%AUTOSTART_9R_TARGET%"
+if errorlevel 1 goto :autostart_fail
+call :log_append "configure | ok | registered | HKCU Run 9Router (%AUTOSTART_9R_TARGET%) | %date% %time%"
+
+rem OpenClaw: dùng cơ chế cài gateway chính thức; lệnh được chạy ẩn và
+rem bản thân OpenClaw đảm bảo việc đăng ký lặp lại là idempotent.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+ "$ErrorActionPreference='Stop';$p=Start-Process -FilePath 'openclaw.cmd' -ArgumentList @('gateway','install') -WindowStyle Hidden -Wait -PassThru;if($p.ExitCode -ne 0){exit $p.ExitCode};[IO.File]::AppendAllText($env:AUTOSTART_RESULT,([Environment]::NewLine+'openclaw|installed|openclaw gateway install'),[Text.UTF8Encoding]::new($false))" >nul 2>nul
+if errorlevel 1 goto :autostart_fail
+call :manifest_append "Autostart:OpenClaw gateway" "registered" "%AUTOSTART_OC_TARGET%"
+if errorlevel 1 goto :autostart_fail
+call :log_append "configure | ok | registered | OpenClaw gateway (%AUTOSTART_OC_TARGET%) | %date% %time%"
+if exist "%AUTOSTART_RESULT%" del /f /q "%AUTOSTART_RESULT%" >nul 2>nul
+call :color_echo "1;32m" "  Đã đăng ký 9Router và OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
+exit /b 0
+
+:autostart_fail
+if exist "%AUTOSTART_RESULT%" del /f /q "%AUTOSTART_RESULT%" >nul 2>nul
+call :log_append "configure | fail | autostart | HKCU Run/OpenClaw gateway | %date% %time%"
+call :color_echo "1;33m" "  Chưa đăng ký được tự khởi động. Chạy lại công cụ để thử lại; các mục khác vẫn được giữ nguyên."
+exit /b 1
+
+:configure_onboarding
+call :color_echo "1;97m" "  Mở dashboard 9Router và giao diện OpenClaw..."
+call :color_echo "2;90m" "  Trong 9Router, tự nhập API key của bạn trong dashboard. Công cụ không đọc hoặc lưu key."
+call :color_echo "2;90m" "  Hoàn tất kết nối đầu tiên và onboarding OpenClaw ngay trên hai giao diện vừa mở."
+start "" "http://localhost:20128"
+if errorlevel 1 goto :onboarding_fail
+start "" "http://127.0.0.1:18789"
+if errorlevel 1 goto :onboarding_fail
+call :log_append "configure | ok | - | dashboards localhost:20128, 127.0.0.1:18789 | %date% %time%"
+exit /b 0
+
+:onboarding_fail
+call :log_append "configure | fail | - | dashboards | %date% %time%"
+call :color_echo "1;33m" "  Không mở được trình duyệt tự động. Bạn có thể mở localhost:20128 và 127.0.0.1:18789 sau khi hoàn tất."
 exit /b 1
 
 :try_install_node
