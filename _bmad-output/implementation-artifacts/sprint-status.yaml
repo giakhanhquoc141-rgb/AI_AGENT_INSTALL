@@ -49,9 +49,9 @@ development_status:
   1-11-log-cục-bộ-báo-cáo-cuối: review
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-kiểm-tra-bản-mới-của-tool: backlog
-  2-2-tự-thay-thế-file-đang-chạy-an-toàn: backlog
+  epic-2: in-progress
+  2-1-kiểm-tra-bản-mới-của-tool: review
+  2-2-tự-thay-thế-file-đang-chạy-an-toàn: review
   epic-2-retrospective: optional
 
   epic-3: backlog

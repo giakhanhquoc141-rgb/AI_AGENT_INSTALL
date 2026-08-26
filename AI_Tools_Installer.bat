@@ -135,7 +135,6 @@ endlocal & exit /b %MA_RC%
 rem ========================= [router] ==========================
 
 :router
-call :init_colors
 if /i "%~1"=="--uninstall" goto :stub_uninstall
 if /i "%~1"=="--update"    goto :stub_update
 if "%~1"==""               goto :run_install
@@ -1249,6 +1248,101 @@ call :color_echo "1;97m" "Cập nhật chưa được hỗ trợ trong phiên b�
 call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
 call :log_append "update | skip | - | - | %date% %time%"
 exit /b 0
+
+:self_update_check_fixed
+call :init_colors
+setlocal EnableDelayedExpansion
+set "UPDATE_RESULT=%TEMP%\aitools-update-result-%RANDOM%-%RANDOM%.txt"
+set "UPDATE_CURRENT=%TOOL_VERSION%"
+if exist "!UPDATE_RESULT!" del /f /q "!UPDATE_RESULT!" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri $env:UPDATE_API -Headers @{'User-Agent'='AI-Tools-Installer'} -UseBasicParsing -TimeoutSec 15;$tag=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($tag)){[IO.File]::WriteAllText($env:UPDATE_RESULT,'none;')}else{[IO.File]::WriteAllText($env:UPDATE_RESULT,('found;'+$tag.TrimStart('v','V')))}}catch{[IO.File]::WriteAllText($env:UPDATE_RESULT,'error;')}" >nul 2>nul
+if not exist "!UPDATE_RESULT!" (call :color_echo "1;31m" "Không thể kiểm tra bản cập nhật. Bản hiện tại vẫn an toàn." & call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api ^| %date% %time%" & endlocal & exit /b 1)
+set "UPDATE_STATE="
+set "UPDATE_LATEST="
+for /f "usebackq tokens=1,2 delims=;" %%a in ("!UPDATE_RESULT!") do (set "UPDATE_STATE=%%a" & set "UPDATE_LATEST=%%b")
+del /f /q "!UPDATE_RESULT!" >nul 2>nul
+if /i "!UPDATE_STATE!"=="error" (call :color_echo "1;31m" "Không thể kiểm tra bản cập nhật. Bản hiện tại vẫn an toàn." & call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api-retry-exhausted ^| %date% %time%" & endlocal & exit /b 1)
+if /i not "!UPDATE_STATE!"=="found" (call :color_echo "1;97m" "Chưa có bản phát hành chính thức nào. Phiên bản hiện tại: !UPDATE_CURRENT!." & call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| no-release ^| %date% %time%" & endlocal & exit /b 0)
+set "UPDATE_COMPARE="
+for /f "delims=" %%c in ('powershell -NoProfile -Command "$a='!UPDATE_CURRENT!';$b='!UPDATE_LATEST!';if([version]$b -gt [version]$a){'new'}else{'current'}"') do if not defined UPDATE_COMPARE set "UPDATE_COMPARE=%%c"
+if /i "!UPDATE_COMPARE!"=="new" (call :color_echo "1;33m" "Có bản mới: hiện tại !UPDATE_CURRENT! → mới nhất !UPDATE_LATEST!." & call :color_echo "2;90m" "Chưa tải xuống tự động; bản hiện tại vẫn an toàn." & call :log_append "update ^| ok ^| !UPDATE_CURRENT! -> !UPDATE_LATEST! ^| !UPDATE_API! ^| %date% %time%") else (call :color_echo "1;32m" "Bạn đang dùng bản mới nhất: !UPDATE_CURRENT!." & call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| latest=!UPDATE_LATEST! ^| %date% %time%")
+endlocal & exit /b 0
+
+:self_update_check
+setlocal EnableDelayedExpansion
+set "UPDATE_RESULT=%TEMP%\aitools-update-result-%RANDOM%-%RANDOM%.txt"
+set "UPDATE_CURRENT=%TOOL_VERSION%"
+if not exist "!UPDATE_RESULT!" powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABFAHIAcgBvAHIAQQBjAHQAaQBvAG4AUAByAGUAZgBlAHIAZQBuAGMAZQA9ACIAUwB0AG8AcAAiADsAIAAkAHIAPQBJAG4AdgBvAGsAZQAtAFIAZQBzAHQATQBlAHQAaABvAGQAIAAtAFUAcgBpACAAJABlAG4AdgA6AFUAUABEAEEAVABFAF8AQQBQAEkAIAAtAFUAcwBlAEIAYQBzAGkAYwBQAGEAcgBzAGkAbgBnACAALQBIAGUAYQBkAGUAcgBzACAAQAB7ACIAVQBzAGUAcgAtAEEAZwBlAG4AdAAiAD0AIgBBAEkALQBUAG8AbwBsAHMALQBJAG4AcwB0AGEAbABsAGUAcgAiAH0AIAAtAFQAaQBtAGUAbwB1AHQAUwBlAGMAIAAxADUAOwAgACQAdAA9AFsAcwB0AHIAaQBuAGcAXQAkAHIALgB0AGEAZwBfAG4AYQBtAGUAOwAgACQAdgA9ACIAZgBvAHUAbgBkADsAIgArACQAdAA7ACAAJAB2AD0AJAB2ACAALQByAGUAcABsAGEAYwBlACAAIgBeAGYAbwB1AG4AZAA7AHYAIgAsACIAZgBvAHUAbmQ7ACIAOwAgAFMAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABlAG4AdgA6AFUAUABEAEEAVABFAFQAXwBSAEUAUwBVAEwAVAAgAC0AVgBhAGwAdQBlACAAJAB2ACAALQBFAG4AYwBvAGQAaQBuAGcAIAB1AHQAZgA4AA== >nul 2>nul
+if not exist "!UPDATE_RESULT!" powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABFAHIAZwBvAHIAQQBjAHQAaQBvAG4AUAByAGUAZgBlAHIAZQBuAGMAZQA9ACIAUwB0AG8AcAAiADsAIAAkAHIAPQBJAG4AdgBvAGsAZQAtAFIAZQBzAHQATQBlAHQAaABvAGQAIAAtAFUAcgBpACAAJABlAG4AdgA6AFUAUABEAEEAVABFAF8AQQBQAEkAIAAtAFUAc2BlAEIAYQBzAGkAYwBQAGEAcgBzAGkAbgBnACAALQBIAGUAYQBkAGUAcgBzACAAQAB7ACIAVQBzAGUAcgAtAEEAZwBlAG4AdAAiAD0AIgBBAEkALQBUAG8AbwBsAHMALQBJAG4AcwB0AGEAbABsAGUAcgAiAH0AIAAtAFQAaQBtAGUAbwB1AHQAUwBlAGMAIAAxADUAOwAgACQAdAA9AFsAcwB0AHIAaQBuAGcAXQAkAHIALgB0AGEAZwBfAG4AYQBtAGUAOwAgACQAdgA9ACIAZgBvAHUAbgBkADsAIgArACQAdAA7ACAAJAB2AD0AJAB2ACAALQByAGUAcABsAGEAYwBlACAAIgBeAGYAbwB1AG4AZAA7AHYAIgAsACIAZgBvAHUAbgBkADsAIgA7ACAAUwBlAHQALQBDAG8AbgB0AGUAbnQgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABlAG4AdgA6AFVQREFURV9SRVNVTFQgLQBWYWx1ZSAkdiAtAEVuY29kaW5nIHV0ZjgA== >nul 2>nul
+if not exist "!UPDATE_RESULT!" powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABFAHIAZwBvAHIAQQBjAHQAaQBvAG4AUAByAGUAZgBlAHIAZQBuAGMAZQA9ACIAUwB0AG8AcAAiADsAIAAkAHIAPQBJAG4AdgBvAGsAZQAtAFIAZQBzAHQATQBlAHQAaABvAGQAIAAtAFUAcgBpACAAJABlAG4AdgA6AFUAUABEAEEAVABFAF8AQQBQAEkAIAAtAFUAc2BlAEIAYQBzAGkAYwBQAGEAcgBzAGkAbgBnACAALQBIAGUAYQBkAGUAcgBzACAAQAB7ACIAVQBzAGUAcgAtAEEAZwBlAG4AdAAiAD0AIgBBAEkALQBUAG8AbwBsAHMALQBJAG4AcwB0AGEAbABsAGUAcgAiAH0AIAAtAFQAaW1lAG8AdQB0AFMAZQBjACAAMTUAIwB3AHJvbmcA >nul 2>nul
+if not exist "!UPDATE_RESULT!" (
+  call :color_echo "1;31m" "Không thể kiểm tra bản cập nhật lúc này. Bản hiện tại vẫn an toàn."
+  call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api ^| %date% %time%"
+  endlocal & exit /b 1
+)
+set "UPDATE_STATE="
+set "UPDATE_LATEST="
+for /f "tokens=1,2 delims=;" %%a in (!UPDATE_RESULT!) do (set "UPDATE_STATE=%%a" & set "UPDATE_LATEST=%%b")
+del /f /q "!UPDATE_RESULT!" >nul 2>nul
+if /i "!UPDATE_STATE!"=="error" (
+  call :color_echo "1;31m" "Không thể kiểm tra bản cập nhật sau 3 lần thử. Bản hiện tại vẫn an toàn."
+  call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api-retry-exhausted ^| %date% %time%"
+  endlocal & exit /b 1
+)
+if /i not "!UPDATE_STATE!"=="found" (
+  call :color_echo "1;97m" "Chưa có bản phát hành chính thức nào. Phiên bản hiện tại: !UPDATE_CURRENT!."
+  call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| no-release ^| %date% %time%"
+  endlocal & exit /b 0
+)
+set "UPDATE_COMPARE="
+for /f "delims=" %%c in ('powershell -NoProfile -Command "$a='!UPDATE_CURRENT!';$b='!UPDATE_LATEST!';try{if(([version]$b) -gt ([version]$a)){'new'}else{'current'}}catch{if($a -eq $b){'current'}else{'new'}}"') do if not defined UPDATE_COMPARE set "UPDATE_COMPARE=%%c"
+if /i "!UPDATE_COMPARE!"=="new" (
+  call :color_echo "1;33m" "Có bản mới: hiện tại !UPDATE_CURRENT! → mới nhất !UPDATE_LATEST!."
+  call :color_echo "2;90m" "Chưa tải xuống. Chạy lại với xác nhận cập nhật khi tính năng này sẵn sàng."
+  call :log_append "update ^| ok ^| !UPDATE_CURRENT! -> !UPDATE_LATEST! ^| !UPDATE_API! ^| %date% %time%"
+) else (
+  call :color_echo "1;32m" "Bạn đang dùng bản mới nhất: !UPDATE_CURRENT!. Bản phát hành mới nhất: !UPDATE_LATEST!."
+  call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| latest=!UPDATE_LATEST! ^| %date% %time%"
+)
+endlocal & exit /b 0
+
+rem ---------------------- safe self-replace ---------------------
+rem %1 = URL asset .bat chính thức, %2 = phiên bản đích.
+rem Tải cạnh file đang chạy, kiểm tra tối thiểu, rồi để tiến trình
+rem con đổi tên sau khi cmd hiện tại đã thoát; không ghi đè trực tiếp.
+:self_update_replace
+setlocal EnableDelayedExpansion
+set "UPDATE_URL=%~1"
+set "UPDATE_VERSION=%~2"
+set "UPDATE_TARGET=%~f0"
+set "UPDATE_NEW=!UPDATE_TARGET!.new"
+set "UPDATE_TMP=!UPDATE_TARGET!.new.tmp"
+set "UPDATE_OLD=!UPDATE_TARGET!.old"
+if not defined UPDATE_URL (
+  call :color_echo "1;31m" "Không tìm thấy tệp cập nhật chính thức. Bản hiện tại vẫn an toàn."
+  call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| missing-asset ^| %date% %time%"
+  endlocal & exit /b 1
+)
+del /f /q "!UPDATE_TMP!" "!UPDATE_NEW!" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$u=$env:UPDATE_URL;$o=$env:UPDATE_TMP;try{Invoke-WebRequest -Uri $u -Headers @{'User-Agent'='AI-Tools-Installer'} -UseBasicParsing -TimeoutSec 30 -OutFile $o;if((Get-Item -LiteralPath $o).Length -lt 128){throw 'empty'};$s=[IO.File]::ReadAllText($o);if($s -notmatch '(?m)^@echo off'){throw 'not-batch'};if($s -notmatch 'TOOL_VERSION='){throw 'missing-version'};Move-Item -LiteralPath $o -Destination $env:UPDATE_NEW -Force}catch{Remove-Item -LiteralPath $o -Force -ErrorAction SilentlyContinue;exit 1}" >nul 2>nul
+if errorlevel 1 (
+  call :color_echo "1;31m" "Tải bản cập nhật thất bại; bản hiện tại không bị thay đổi."
+  call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| download-or-verify ^| %date% %time%"
+  endlocal & exit /b 1
+)
+if not exist "!UPDATE_NEW!" (
+  call :color_echo "1;31m" "Không tạo được tệp cập nhật tạm; bản hiện tại vẫn an toàn."
+  call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| missing-temp ^| %date% %time%"
+  endlocal & exit /b 1
+)
+set "UPDATE_TARGET=!UPDATE_TARGET!"
+set "UPDATE_NEW=!UPDATE_NEW!"
+set "UPDATE_OLD=!UPDATE_OLD!"
+set "UPDATE_LOG=%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log"
+start "" /b cmd /d /c "ping 127.0.0.1 -n 3 >nul & move /y \"!UPDATE_TARGET!\" \"!UPDATE_OLD!\" >nul && move /y \"!UPDATE_NEW!\" \"!UPDATE_TARGET!\" >nul || (if exist \"!UPDATE_OLD!\" move /y \"!UPDATE_OLD!\" \"!UPDATE_TARGET!\" >nul) & if exist \"!UPDATE_TARGET!\" del /f /q \"!UPDATE_OLD!\" >nul 2>nul & echo update-replace ^| ok ^| !TOOL_VERSION! -> !UPDATE_VERSION! ^| deferred-rename ^| %date% %time%>>\"!UPDATE_LOG!\""
+call :color_echo "1;32m" "Đã tải bản cập nhật. Công cụ sẽ thay thế an toàn sau khi phiên này kết thúc."
+call :log_append "update-replace ^| scheduled ^| !TOOL_VERSION! -> !UPDATE_VERSION! ^| deferred-rename ^| %date% %time%"
+endlocal & exit /b 0
 
 rem --------------------------- mode không hợp lệ ---------------------------
 :unknown_mode
