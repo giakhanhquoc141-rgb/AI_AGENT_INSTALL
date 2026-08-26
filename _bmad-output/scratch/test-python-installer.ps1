@@ -1,11 +1,11 @@
-$ErrorActionPreference = 'Stop'
-$bat = Get-Content -Raw (Join-Path $PSScriptRoot '..\..\AI_Tools_Installer.bat')
+﻿$ErrorActionPreference = 'Stop'
+$bat = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\..\AI_Tools_Installer.bat'), [Text.Encoding]::UTF8)
 $checks = [ordered]@{
   'version guard' = $bat -match "3\\.13\\.\\d\+"
-  'retry three times' = $bat -match '\$i -le 3'
+  'retry three times' = $bat -match 'for /l %%r in \(1,1,3\)' -and $bat -match 'for\(\$attempt=1;\$attempt -le 3;\$attempt\+\+\)'
   'official URL' = $bat -match 'python\.org/ftp/python/%PY_VER%/python-%PY_VER%-amd64\.exe'
   'authenticode PSF' = $bat -match 'Get-AuthenticodeSignature' -and $bat -match 'Python Software Foundation'
-  'silent per-user flags' = $bat -match 'InstallAllUsers=0' -and $bat -match 'Include_launcher=0' -and $bat -match 'PrependPath=0' -and $bat -match 'Shortcuts=0' -and $bat -match 'Include_test=0' -and $bat -match '/quiet /norestart'
+  'silent per-user flags' = $bat -match 'InstallAllUsers=0' -and $bat -match 'Include_launcher=0' -and $bat -match 'PrependPath=0' -and $bat -match 'Shortcuts=0' -and $bat -match 'Include_test=0' -and $bat -match "'/quiet','/norestart'"
   'exact target' = $bat -match 'Programs\\Python\\Python313' -and $bat -match 'PY_EXE=%PY_DIR%\\python\.exe'
   'path ordering' = $bat -match ':python_path_prioritize' -and $bat -match 'PATH=%PY_NEW_PATH%'
   'direct and PATH verify' = $bat -match 'Get-Command python' -and $bat -match '\$expected.*python --version'
@@ -14,7 +14,7 @@ $checks = [ordered]@{
   'managed target backup' = $bat -match 'PY_BACKUP=.*Python313\.aitools-backup' -and $bat -match 'Move-Item -LiteralPath \$env:PY_DIR'
   '64-bit preflight' = $bat -match 'PROCESSOR_ARCHITECTURE' -and $bat -match 'unsupported-32bit'
   'where resolution' = $bat -match 'where\.exe python' -and $bat -match 'PY_WHERE_FIRST'
-  'cleanup failure reporting' = $bat -match 'PY_CLEANUP_RC' -and $bat -match 'tệp tạm Python'
+  'cleanup failure reporting' = $bat -match 'PY_CLEANUP_RC' -and $bat -match 'Python;.*phục hồi'
   'empty PATH preservation' = $bat -match 'StringSplitOptions\]::None' -and $bat -match '\$keep=@\(\$old\.Split'
   'continuation' = $bat -match 'call :try_install_python' -and $bat -match 'call :try_install_vscode'
 }

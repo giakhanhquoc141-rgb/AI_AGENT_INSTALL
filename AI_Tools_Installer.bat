@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.1.0
+rem  AI Tools Installer - Phien ban 0.3.0
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.2.1"
+set "TOOL_VERSION=0.3.0"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -80,8 +80,19 @@ set "PROGRESS_SPINNER=|"
 if "%PROGRESS_SLOT%"=="1" set "PROGRESS_SPINNER=/"
 if "%PROGRESS_SLOT%"=="2" set "PROGRESS_SPINNER=-"
 if "%PROGRESS_SLOT%"=="3" set "PROGRESS_SPINNER=\\"
-powershell -NoProfile -Command "$p=[int]$env:PROGRESS_PCT;$n=[string]$env:PROGRESS_NAME;$s=[string]$env:PROGRESS_SPINNER;$done=[math]::Floor($p/5);$bar=('#'*$done)+('.'*(20-$done));Write-Host ('  '+$s+' ['+$bar+'] '+$p.ToString('D3')+([char]37)+'  '+$n)"
+powershell -NoProfile -Command "$p=[int]$env:PROGRESS_PCT;$n=[string]$env:PROGRESS_NAME;$s=[string]$env:PROGRESS_SPINNER;$done=[math]::Floor($p/5);$bar=('#'*$done)+('.'*(20-$done));Write-Host ('  '+$s+' ['+$bar+'] '+$p.ToString('D3')+([char]37)+'  '+$n) -ForegroundColor Cyan"
 exit /b 0
+
+rem Tải theo luồng và hiển thị phần trăm byte thật. Nếu máy chủ không
+rem trả Content-Length thì hiện số MiB cùng spinner cho đến khi hoàn tất.
+:download_with_progress
+setlocal
+set "DL_URL=%~1"
+set "DL_OUT=%~2"
+set "DL_NAME=%~3"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$u=$env:DL_URL;$o=$env:DL_OUT;$n=$env:DL_NAME;$spin=@('|','/','-','\');for($attempt=1;$attempt -le 3;$attempt++){$req=$null;$res=$null;$src=$null;$dst=$null;try{if(Test-Path -LiteralPath $o){Remove-Item -LiteralPath $o -Force};$req=[Net.HttpWebRequest]::Create($u);$req.UserAgent='AI-Tools-Installer';$req.Timeout=120000;$req.ReadWriteTimeout=15000;$watch=[Diagnostics.Stopwatch]::StartNew();$ar=$req.BeginGetResponse($null,$null);$tick=0;while(-not $ar.AsyncWaitHandle.WaitOne(120)){Write-Host (([char]13)+'  '+$spin[$tick%%4]+' Đang kết nối '+$n+'...') -NoNewline -ForegroundColor Cyan;$tick++;if($watch.Elapsed.TotalSeconds -gt 120){$req.Abort();throw 'connect-timeout'}};$res=$req.EndGetResponse($ar);$total=[int64]$res.ContentLength;$src=$res.GetResponseStream();$src.ReadTimeout=15000;$dst=[IO.File]::Open($o,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None);$buf=New-Object byte[] 65536;$read=[int64]0;$lastPct=-1;$lastDraw=[Diagnostics.Stopwatch]::StartNew();while($true){$rr=$src.BeginRead($buf,0,$buf.Length,$null,$null);while(-not $rr.AsyncWaitHandle.WaitOne(120)){if($watch.Elapsed.TotalMinutes -gt 10){$req.Abort();throw 'transfer-timeout'};Write-Host (([char]13)+'  '+$spin[$tick%%4]+' Đang nhận '+$n+'  '+('{0:N1}' -f ($read/1MB))+' MiB') -NoNewline -ForegroundColor Cyan;$tick++};$count=$src.EndRead($rr);if($count -le 0){break};$dst.Write($buf,0,$count);$read+=$count;$tick++;if($total -gt 0){$pct=[int][math]::Min(100,[math]::Floor(($read*100)/$total));if($pct -ne $lastPct -and ($lastDraw.ElapsedMilliseconds -ge 100 -or $pct -eq 100)){$done=[int][math]::Floor($pct/5);$bar=('#'*$done)+('.'*(20-$done));Write-Host (([char]13)+'  '+$spin[$tick%%4]+' ['+$bar+'] '+$pct.ToString('D3')+([char]37)+'  '+$n+'  '+('{0:N1}' -f ($read/1MB))+'/'+('{0:N1}' -f ($total/1MB))+' MiB') -NoNewline -ForegroundColor Cyan;$lastPct=$pct;$lastDraw.Restart()}}elseif($lastDraw.ElapsedMilliseconds -ge 100){Write-Host (([char]13)+'  '+$spin[$tick%%4]+' '+$n+'  '+('{0:N1}' -f ($read/1MB))+' MiB') -NoNewline -ForegroundColor Cyan;$lastDraw.Restart()}};$dst.Flush();if($total -gt 0 -and $read -ne $total){throw ('truncated '+$read+'/'+$total)};if($read -le 0){throw 'empty'};Write-Host (([char]13)+'  OK [####################] 100'+([char]37)+'  '+$n+'                              ') -ForegroundColor Green;exit 0}catch{$reason=($_.Exception.Message -replace '[\r\n]+',' ');if($reason.Length -gt 72){$reason=$reason.Substring(0,72)};Write-Host (([char]13)+'  X Thử tải '+$attempt+'/3 thất bại: '+$n+' — '+$reason+'          ') -ForegroundColor Yellow;if(Test-Path -LiteralPath $o){Remove-Item -LiteralPath $o -Force -ErrorAction SilentlyContinue};if($attempt -lt 3){Start-Sleep -Milliseconds 600}}finally{if($null -ne $dst){$dst.Dispose()};if($null -ne $src){$src.Dispose()};if($null -ne $res){$res.Dispose()};if($null -ne $req){$req.Abort()}}};exit 1"
+set "DL_RC=%errorlevel%"
+endlocal & exit /b %DL_RC%
 
 rem ------------------------------------------------------------
 rem  Ghi một dòng log tại %LOCALAPPDATA%\AITools\logs\
@@ -225,7 +236,7 @@ call :scan_block
 if errorlevel 1 (set "PIPELINE_RC=1" & set "PLAN_ABORT=1")
 call :plan_block
 if errorlevel 1 set "PIPELINE_RC=1"
-if defined PLAN_ABORT goto :run_install_report
+if defined PLAN_ABORT goto :run_install_end
 call :execute_block
 if errorlevel 1 set "PIPELINE_RC=1"
 if not "%PIPELINE_RC%"=="0" goto :run_install_report
@@ -266,14 +277,14 @@ call :color_echo "1;97m" "Bước quét máy — kiểm tra 7 mục..."
 echo.
 
 rem --- PowerShell version-check: phát hiện, lấy bản mới nhất, quyết định (AD-2/AD-6) ---
-set "S1=$ErrorActionPreference='SilentlyContinue';function P($s){[Console]::WriteLine($s)};function Sen($x){if($x -eq ''){return '-'};return $x};"
+set "S1=$ErrorActionPreference='SilentlyContinue';function P($s){[Console]::WriteLine($s)};function E($s){[Console]::Error.WriteLine($s)};function W($s){[Console]::Error.Write($s)};function Sen($x){if($x -eq ''){return '-'};return $x};"
 set "S2=function S3($v){$m=[regex]::Match([string]$v,'\d+\.\d+\.\d+');if($m.Success){return $m.Value};return ''};"
 set "S3=function Cmp3($a,$b){$A=($a -split '\.');$B=($b -split '\.');for($i=0;$i -lt 3;$i++){$x=[int]$A[$i];$y=[int]$B[$i];if($x -gt $y){return 1};if($x -lt $y){return -1}};return 0};"
-set "S4=function RetryC($cb){for($i=0;$i -lt 3;$i++){try{return (& $cb)}catch{if($i -ge 2){throw};Start-Sleep -Milliseconds 300}};throw 'retry-failed'};"
+set "S4=function RetryC($cb){for($i=0;$i -lt 3;$i++){$j=$null;try{$j=Start-Job -ScriptBlock $cb;$tick=0;$sw=[Diagnostics.Stopwatch]::StartNew();while($j.State -eq 'Running' -or $j.State -eq 'NotStarted'){W (([char]13)+'    '+@('|','/','-','\')[$tick%%4]+' Đang kết nối '+$script:active+' — lần '+($i+1)+'/3...');Start-Sleep -Milliseconds 120;$tick++;if($sw.Elapsed.TotalSeconds -gt 20){Stop-Job -Job $j -ErrorAction SilentlyContinue;throw 'network-timeout'}};if($j.State -ne 'Completed'){throw 'network-job-failed'};$r=@(Receive-Job -Job $j -ErrorAction Stop);W (([char]13)+'    OK Đã kiểm tra '+$script:active+'                         '+[Environment]::NewLine);return $r}catch{W (([char]13)+'    LỖI Kết nối '+$script:active+' chưa thành công.              '+[Environment]::NewLine);if($i -ge 2){throw};Start-Sleep -Milliseconds 300}finally{if($null -ne $j){Remove-Job -Job $j -Force -ErrorAction SilentlyContinue}}};throw 'retry-failed'};"
 set "S5=function Cur($it){switch($it){'Git'{$c=Get-Command git -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& git --version 2>$null)|Out-String;$m=[regex]::Match($o,'\d+\.\d+\.\d+(\.windows\.[0-9]+)?');if($m.Success){return $m.Value};return ''};'Node'{$c=Get-Command node -ErrorAction SilentlyContinue;if($null -eq $c){return ''};if($c.Source -match '(?i)openclaw'){return ''};$o=(& node --version 2>$null)|Out-String;return (S3 $o)};'Python'{$c=Get-Command python -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& python --version 2>&1)|Out-String;$m=[regex]::Match($o,'Python\s+(\d+\.\d+(\.\d+)?)');if(-not $m.Success){return ''};return $m.Groups[1].Value};'VSCode'{$c=Get-Command code -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=@(& code --version 2>$null);if($o.Count -ge 1){return ($o[0].Trim())};return ''};'VSCodeExt'{$c=Get-Command code -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=@(& code --list-extensions --show-versions 2>$null);foreach($l in $o){if($l -match '(?i)anthropic\.claude-code'){$m=[regex]::Match($l,'@([0-9][^@ ]*)');if($m.Success){return $m.Groups[1].Value};return 'installed'}};return ''};'OpenClaw'{$c=Get-Command openclaw -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=((& openclaw --version 2>$null)|Out-String).Trim();$t=@($o -split '\s+');if($t.Count -ge 2){return $t[1]};return $o};'9Router'{$c=Get-Command 9router -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& 9router --version 2>$null)|Out-String;return (S3 $o)}};return ''};"
 set "S6=function Latest($it){switch($it){'Git'{$d=RetryC {(Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 -Headers @{'User-Agent'='AI-Tools-Installer'})};return ([string]$d.tag_name).TrimStart('v')};'Node'{$d=RetryC {(Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};$best='';foreach($e in @($d)){if($e.lts -eq $false){continue};$v=S3 $e.version;if($v -eq ''){continue};if((Cmp3 $v '22.22.3') -ge 0 -and (Cmp3 $v '23.0.0') -lt 0){}elseif((Cmp3 $v '24.15.0') -ge 0 -and (Cmp3 $v '25.0.0') -lt 0){}else{continue};if($best -eq '' -or (Cmp3 $v $best) -gt 0){$best=$v}};return $best};'Python'{$d=RetryC {(Invoke-RestMethod -Uri 'https://www.python.org/api/v2/downloads/release/' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};$best='';foreach($e in @($d)){if($e.is_prerelease){continue};$v=S3 $e.name;if($v -notmatch '^3\.13\.'){continue};if($best -eq '' -or (Cmp3 $v $best) -gt 0){$best=$v}};return $best};'VSCode'{$d=RetryC {(Invoke-RestMethod -Uri 'https://api.github.com/repos/microsoft/vscode/releases/latest' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 -Headers @{'User-Agent'='AI-Tools-Installer'})};return ([string]$d.tag_name).TrimStart('v')};'OpenClaw'{$d=RetryC {(Invoke-RestMethod -Uri 'https://registry.npmjs.org/-/package/openclaw/dist-tags' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};return ([string]$d.latest)};'9Router'{$d=RetryC {(Invoke-RestMethod -Uri 'https://registry.npmjs.org/-/package/9router/dist-tags' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};return (S3 $d.latest)}};return ''};"
 set "S7=function Decide($it,$cur,$lat){if($it -eq 'VSCodeExt'){if($cur -ne ''){return 'SKIP'};return 'INSTALL'};if($cur -eq ''){return 'INSTALL'};if($lat -eq ''){return 'SKIP'};if($it -eq 'OpenClaw'){if($cur.CompareTo($lat) -ge 0){return 'SKIP'};return 'UPDATE'};if($it -eq 'Git'){$gc=$cur -replace '\.windows\.','.';$gl=$lat -replace '\.windows\.','.';try{if(([version]$gc).CompareTo([version]$gl) -ge 0){return 'SKIP'};return 'UPDATE'}catch{return 'SKIP'}};$c=S3 $cur;$l=S3 $lat;if($c -eq '' -or $l -eq ''){return 'SKIP'};if((Cmp3 $c $l) -ge 0){return 'SKIP'};return 'UPDATE'};"
-set "S8=[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$neterr=0;foreach($it in @('Git','Node','Python','VSCode','VSCodeExt','OpenClaw','9Router')){$cur='';try{$cur=Cur $it}catch{$cur=''};$lat='';if($it -ne 'VSCodeExt'){try{$lat=Latest $it}catch{$lat='';$neterr++}};$dec=Decide $it $cur $lat;P ('{0}|{1}|{2}|{3}' -f $it,(Sen $cur),(Sen $lat),$dec)};P ('NETERR|{0}' -f $neterr)"
+set "S8=[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$neterr=0;$items=@('Git','Node','Python','VSCode','VSCodeExt','OpenClaw','9Router');$idx=0;foreach($it in $items){$script:active=$it;E ('    '+@('|','/','-','\')[$idx%%4]+' Đang rà '+$it+'...');$cur='';try{$cur=Cur $it}catch{$cur=''};$lat='';if($it -ne 'VSCodeExt'){try{$lat=Latest $it}catch{$lat='';$neterr++}};$dec=Decide $it $cur $lat;$idx++;$pct=[int][math]::Floor(($idx*100)/$items.Count);$done=[int][math]::Floor($pct/5);E ('    ['+('#'*$done)+('.'*(20-$done))+'] '+$pct.ToString('D3')+([char]37)+'  Đã rà '+$it);P ('{0}|{1}|{2}|{3}' -f $it,(Sen $cur),(Sen $lat),$dec)};P ('NETERR|{0}' -f $neterr)"
 
 set "PSCMD=powershell -NoProfile -ExecutionPolicy Bypass -Command "!S1!!S2!!S3!!S4!!S5!!S6!!S7!!S8!""
 for /f "usebackq delims=" %%L in (`!PSCMD!`) do call :scan_parse "%%L"
@@ -749,7 +760,8 @@ if defined NPM_MAJOR powershell -NoProfile -ExecutionPolicy Bypass -Command "if(
 if not errorlevel 1 set "NPM_ALLOW_SCRIPTS=--allow-scripts openclaw"
 if "%NPM_MAJOR%"=="12" if not defined NPM_ALLOW_SCRIPTS goto :npm_openclaw_fail
 for /l %%a in (1,1,3) do (
-  if "%NPM_ALLOW_SCRIPTS%"=="" (npm.cmd install -g openclaw@latest >nul 2>nul) else (npm.cmd install -g openclaw@latest %NPM_ALLOW_SCRIPTS% >nul 2>nul)
+  call :color_echo "1;36m" "  OpenClaw — npm đang tải, giải nén và liên kết gói (lần %%a/3)..."
+  if "%NPM_ALLOW_SCRIPTS%"=="" (npm.cmd install -g openclaw@latest --progress=true --loglevel=notice) else (npm.cmd install -g openclaw@latest %NPM_ALLOW_SCRIPTS% --progress=true --loglevel=notice)
   if not errorlevel 1 goto :npm_openclaw_verify
 )
 goto :npm_openclaw_fail
@@ -776,7 +788,8 @@ set "NPM_RESULT_VERSION="
 call :npm_prepare
 if errorlevel 1 goto :npm_9router_fail
 for /l %%a in (1,1,3) do (
-  npm.cmd install -g 9router >nul 2>nul
+  call :color_echo "1;36m" "  9Router — npm đang tải, giải nén và liên kết gói (lần %%a/3)..."
+  npm.cmd install -g 9router --progress=true --loglevel=notice
   if not errorlevel 1 goto :npm_9router_verify
 )
 goto :npm_9router_fail
@@ -835,7 +848,7 @@ if errorlevel 1 goto :ivsc_package_fail
 call :vscode_signature
 if errorlevel 1 goto :ivsc_package_fail
 rem Inno Setup User Setup flags: no UAC/all-users and suppress auto-run.
-start "" /wait "%VSCODE_INSTALLER%" /VERYSILENT /NORESTART /MERGETASKS=!runcode >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$p=Start-Process -FilePath $env:VSCODE_INSTALLER -ArgumentList @('/VERYSILENT','/NORESTART','/MERGETASKS=!runcode') -PassThru;if($null -eq $p){throw 'start-failed'};$s=@('|','/','-','\');$i=0;$sw=[Diagnostics.Stopwatch]::StartNew();while(-not $p.HasExited){if($sw.Elapsed.TotalMinutes -gt 30){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;Write-Host (([char]13)+'  X Visual Studio Code cài đặt quá thời gian.             ') -ForegroundColor Red;exit 124};Write-Host (([char]13)+'  '+$s[$i%%4]+' Đang cài Visual Studio Code... '+[int]$sw.Elapsed.TotalSeconds+'s') -NoNewline -ForegroundColor Cyan;Start-Sleep -Milliseconds 140;$i++};if($p.ExitCode -eq 0){Write-Host (([char]13)+'  OK Đã cài xong Visual Studio Code.                    ') -ForegroundColor Green}else{Write-Host (([char]13)+'  X Visual Studio Code cài lỗi, mã '+$p.ExitCode+'.      ') -ForegroundColor Red};exit $p.ExitCode}catch{Write-Host (([char]13)+'  X Không thể chạy trình cài Visual Studio Code.        ') -ForegroundColor Red;exit 1}"
 if errorlevel 1 goto :ivsc_install_fail
 if not exist "%VSCODE_CODE%" goto :ivsc_verify_fail
 call :path_append "%%LOCALAPPDATA%%\Programs\Microsoft VS Code\bin"
@@ -853,12 +866,8 @@ call :color_echo "1;32m" "  Visual Studio Code đã cài xong (User Setup)."
 exit /b 0
 
 :vscode_download
-for /l %%r in (1,1,3) do (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-WebRequest -Uri $env:VSCODE_URL -OutFile $env:VSCODE_INSTALLER -UseBasicParsing" >nul 2>nul
-  if not errorlevel 1 if exist "%VSCODE_INSTALLER%" exit /b 0
-  if exist "%VSCODE_INSTALLER%" del /f /q "%VSCODE_INSTALLER%" >nul 2>nul
-)
-exit /b 1
+call :download_with_progress "%VSCODE_URL%" "%VSCODE_INSTALLER%" "Visual Studio Code"
+exit /b %errorlevel%
 
 :vscode_signature
 rem Signature validation is mandatory when Authenticode is available.
@@ -986,8 +995,18 @@ if exist "%PY_MANIFEST_BACKUP%" goto :ipy_prepare_fail
 echo.
 if /i not "%PROCESSOR_ARCHITECTURE%"=="AMD64" if /i not "%PROCESSOR_ARCHITEW6432%"=="AMD64" goto :ipy_32bit
 call :color_echo "1;97m" "  Đang tải Python %PY_VER% từ nguồn chính thức..."
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$ok=$false;for($i=1;$i -le 3;$i++){try{if(Test-Path -LiteralPath $env:PY_INSTALLER){Remove-Item -LiteralPath $env:PY_INSTALLER -Force};Invoke-WebRequest -Uri $env:PY_URL -OutFile $env:PY_INSTALLER -UseBasicParsing -TimeoutSec 120;if((Get-Item -LiteralPath $env:PY_INSTALLER).Length -le 0){throw 'empty'};$sig=Get-AuthenticodeSignature -LiteralPath $env:PY_INSTALLER;if($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch '(?i)Python Software Foundation'){throw 'signature'};$ok=$true;break}catch{if(Test-Path -LiteralPath $env:PY_INSTALLER){Remove-Item -LiteralPath $env:PY_INSTALLER -Force -ErrorAction SilentlyContinue};if($i -lt 3){Start-Sleep -Milliseconds 500}}};if(-not $ok){exit 1}" >nul 2>nul
-if errorlevel 1 goto :ipy_package_fail
+for /l %%r in (1,1,3) do (
+  call :download_with_progress "%PY_URL%" "%PY_INSTALLER%" "Python %PY_VER%"
+  if not errorlevel 1 (
+    call :color_echo "1;36m" "  Đang xác minh chữ ký Python Software Foundation..."
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$sig=Get-AuthenticodeSignature -LiteralPath $env:PY_INSTALLER;if($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch '(?i)Python Software Foundation'){exit 1}" >nul 2>nul
+    if not errorlevel 1 goto :ipy_package_ready
+  )
+  if exist "%PY_INSTALLER%" del /f /q "%PY_INSTALLER%" >nul 2>nul
+  call :color_echo "1;33m" "  Gói Python chưa hợp lệ — tải lại toàn bộ (lần %%r/3)."
+)
+goto :ipy_package_fail
+:ipy_package_ready
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment');try{if($null -eq $k){$s=[pscustomobject]@{Exists=$false;Value='';Kind='ExpandString'}}else{try{$s=[pscustomobject]@{Exists=$true;Value=[string]$k.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);Kind=$k.GetValueKind('Path').ToString()}}catch{$s=[pscustomobject]@{Exists=$false;Value='';Kind='ExpandString'}}};$s|Export-Clixml -LiteralPath $env:PY_PATH_STATE}finally{if($k){$k.Dispose()}}" >nul 2>nul
 if errorlevel 1 goto :ipy_prepare_fail
 if exist "%PY_MANIFEST%" (copy /b /y "%PY_MANIFEST%" "%PY_MANIFEST_BACKUP%" >nul 2>nul & if errorlevel 1 goto :ipy_prepare_fail & set "PY_HAD_MANIFEST=1")
@@ -998,7 +1017,7 @@ if exist "%PY_DIR%" (
   if errorlevel 1 goto :ipy_prepare_fail
 )
 call :color_echo "1;97m" "  Đã xác minh chữ ký. Đang cài Python cho tài khoản hiện tại..."
-start "" /wait "%PY_INSTALLER%" InstallAllUsers=0 Include_launcher=0 PrependPath=0 Shortcuts=0 Include_test=0 /quiet /norestart
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$p=Start-Process -FilePath $env:PY_INSTALLER -ArgumentList @('InstallAllUsers=0','Include_launcher=0','PrependPath=0','Shortcuts=0','Include_test=0','/quiet','/norestart') -PassThru;if($null -eq $p){throw 'start-failed'};$s=@('|','/','-','\');$i=0;$sw=[Diagnostics.Stopwatch]::StartNew();while(-not $p.HasExited){if($sw.Elapsed.TotalMinutes -gt 30){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;Write-Host (([char]13)+'  X Python cài đặt quá thời gian.                        ') -ForegroundColor Red;exit 124};Write-Host (([char]13)+'  '+$s[$i%%4]+' Đang cài Python... '+[int]$sw.Elapsed.TotalSeconds+'s') -NoNewline -ForegroundColor Cyan;Start-Sleep -Milliseconds 140;$i++};if($p.ExitCode -eq 0){Write-Host (([char]13)+'  OK Đã cài xong Python.                                ') -ForegroundColor Green}else{Write-Host (([char]13)+'  X Python cài lỗi, mã '+$p.ExitCode+'.                  ') -ForegroundColor Red};exit $p.ExitCode}catch{Write-Host (([char]13)+'  X Không thể chạy trình cài Python.                    ') -ForegroundColor Red;exit 1}"
 if errorlevel 1 goto :ipy_install_fail
 call :path_append "%%LOCALAPPDATA%%\Programs\Python\Python313"
 if errorlevel 1 goto :ipy_path_fail
@@ -1133,8 +1152,19 @@ if exist "%GIT_MANIFEST_BACKUP%" goto :igit_collision_fail
 
 echo.
 call :color_echo "1;97m" "  Đang tải Git %GIT_VER% từ nguồn chính thức..."
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$ok=$false;for($i=1;$i -le 3;$i++){try{if(Test-Path -LiteralPath $env:GIT_ZIP){Remove-Item -LiteralPath $env:GIT_ZIP -Force};if(Test-Path -LiteralPath $env:GIT_STAGE){Remove-Item -LiteralPath $env:GIT_STAGE -Recurse -Force};Invoke-WebRequest -Uri $env:GIT_URL -OutFile $env:GIT_ZIP -UseBasicParsing -TimeoutSec 120;if((Get-Item -LiteralPath $env:GIT_ZIP).Length -le 0){throw 'empty'};New-Item -ItemType Directory -Path $env:GIT_STAGE|Out-Null;Expand-Archive -LiteralPath $env:GIT_ZIP -DestinationPath $env:GIT_STAGE -Force;$exe=Join-Path $env:GIT_STAGE 'cmd\git.exe';if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){throw 'missing'};$out=& $exe --version 2^>^&1;if($LASTEXITCODE -ne 0 -or $out -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){throw 'version'};$ok=$true;break}catch{if(Test-Path -LiteralPath $env:GIT_ZIP){Remove-Item -LiteralPath $env:GIT_ZIP -Force -ErrorAction SilentlyContinue};if(Test-Path -LiteralPath $env:GIT_STAGE){Remove-Item -LiteralPath $env:GIT_STAGE -Recurse -Force -ErrorAction SilentlyContinue};if($i -lt 3){Start-Sleep -Milliseconds 500}}};if(-not $ok){exit 1}" >nul 2>nul
-if errorlevel 1 goto :igit_package_fail
+for /l %%r in (1,1,3) do (
+  call :download_with_progress "%GIT_URL%" "%GIT_ZIP%" "Git %GIT_VER%"
+  if not errorlevel 1 (
+    call :color_echo "1;36m" "  Đang giải nén và xác minh Git..."
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';if(Test-Path -LiteralPath $env:GIT_STAGE){Remove-Item -LiteralPath $env:GIT_STAGE -Recurse -Force};New-Item -ItemType Directory -Path $env:GIT_STAGE|Out-Null;Expand-Archive -LiteralPath $env:GIT_ZIP -DestinationPath $env:GIT_STAGE -Force;$exe=Join-Path $env:GIT_STAGE 'cmd\git.exe';if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){throw 'missing'};$out=& $exe --version 2^>^&1;if($LASTEXITCODE -ne 0 -or $out -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){throw 'version'}" >nul 2>nul
+    if not errorlevel 1 goto :igit_package_ready
+  )
+  if exist "%GIT_ZIP%" del /f /q "%GIT_ZIP%" >nul 2>nul
+  if exist "%GIT_STAGE%" rmdir /s /q "%GIT_STAGE%" >nul 2>nul
+  call :color_echo "1;33m" "  Gói Git chưa hợp lệ — tải lại toàn bộ (lần %%r/3)."
+)
+goto :igit_package_fail
+:igit_package_ready
 
 call :color_echo "1;97m" "  Đã tải và kiểm tra xong. Đang thay bản Git mới..."
 
@@ -1264,8 +1294,8 @@ set "NODE_STAGE=%TEMP%\node-stage-%VL_Node%"
 set "NODE_DIR=%LOCALAPPDATA%\node"
 set "NODE_BACKUP=%TEMP%\node-backup-%RANDOM%-%RANDOM%"
 
-rem --- Tải ZIP (retry 3, $ProgressPreference='SilentlyContinue') ---
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$u='%NODE_URL%';$o='%NODE_ZIP%';$ok=$false;for($i=0;$i -lt 3;$i++){try{Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 120;if((Get-Item $o -ErrorAction SilentlyContinue).Length -gt 0){$ok=$true;break}}catch{if($i -ge 2){break};Start-Sleep -Milliseconds 500}};if(-not $ok){exit 1};exit 0"
+rem --- Tải ZIP với phần trăm byte thật và retry 3 lần ---
+call :download_with_progress "%NODE_URL%" "%NODE_ZIP%" "Node.js %NODE_VER%"
 if errorlevel 1 goto :inode_download_fail
 
 echo.
@@ -1462,7 +1492,8 @@ if not defined UPDATE_URL (
   endlocal & exit /b 1
 )
 del /f /q "!UPDATE_TMP!" "!UPDATE_NEW!" >nul 2>nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$u=$env:UPDATE_URL;$o=$env:UPDATE_TMP;try{Invoke-WebRequest -Uri $u -Headers @{'User-Agent'='AI-Tools-Installer'} -UseBasicParsing -TimeoutSec 30 -OutFile $o;if((Get-Item -LiteralPath $o).Length -lt 128){throw 'empty'};$s=[IO.File]::ReadAllText($o);if($s -notmatch '(?m)^@echo off'){throw 'not-batch'};if($s -notmatch 'TOOL_VERSION='){throw 'missing-version'};Move-Item -LiteralPath $o -Destination $env:UPDATE_NEW -Force}catch{Remove-Item -LiteralPath $o -Force -ErrorAction SilentlyContinue;exit 1}" >nul 2>nul
+call :download_with_progress "%UPDATE_URL%" "%UPDATE_TMP%" "Bản cập nhật %UPDATE_VERSION%"
+if not errorlevel 1 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$o=$env:UPDATE_TMP;if((Get-Item -LiteralPath $o).Length -lt 128){throw 'empty'};$s=[IO.File]::ReadAllText($o);if($s -notmatch '(?m)^@echo off'){throw 'not-batch'};if($s -notmatch 'TOOL_VERSION='){throw 'missing-version'};Move-Item -LiteralPath $o -Destination $env:UPDATE_NEW -Force" >nul 2>nul
 if errorlevel 1 (
   call :color_echo "1;31m" "Tải bản cập nhật thất bại; bản hiện tại không bị thay đổi."
   call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| download-or-verify ^| %date% %time%"
