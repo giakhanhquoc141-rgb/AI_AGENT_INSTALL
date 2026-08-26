@@ -1,5 +1,9 @@
 ﻿param([string]$BatPath)
 $ErrorActionPreference = 'Stop'
+# Ép UTF-8 khi bắt output từ child powershell để tiếng Việt không bị
+# mojibake qua console codepage (cp437/ANSI) — không phụ thuộc chcp của máy.
+$OutputEncoding = [Text.Encoding]::UTF8
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($BatPath)) { $BatPath = Join-Path $root 'AI_Tools_Installer.bat' }
 $BatPath = (Resolve-Path -LiteralPath $BatPath).Path

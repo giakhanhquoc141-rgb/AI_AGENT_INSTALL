@@ -7,6 +7,11 @@ $checks = [ordered]@{
   'auto-download-asset' = $bat.Contains('AI_Tools_Installer\.bat') -and $bat.Contains('call :self_update_replace')
   'safe-fallback' = $bat.Contains('Không thể kiểm tra cập nhật; bản hiện tại vẫn an toàn.')
   'no-credential' = -not ($bat.Substring($bat.IndexOf(':early_update'), $bat.IndexOf(':early_uninstall') - $bat.IndexOf(':early_update')) -match '(?i)(api[_-]?key|authorization|bearer|secret)')
+  'startup-fetches-asset-url' = $bat.Contains('browser_download_url') -and $bat.Contains('STARTUP_UPDATE_URL')
+  'startup-version-compare' = $bat.Contains('STARTUP_UPDATE_COMPARE') -and $bat.Contains('[version]$b -gt [version]$a')
+  'startup-prompt-choice' = $bat.Contains('choice /c CB') -and $bat.Contains('call :offer_update')
+  'startup-offers-self-replace' = $bat.Contains('call :self_update_replace "%STARTUP_UPDATE_URL%"') -and $bat.Contains('goto :installer_exit')
+  'startup-decline-continues' = $bat.Contains('user-declined') -and $bat.Contains('startup-update ^| skip')
 }
 
 function Get-ReleaseState {

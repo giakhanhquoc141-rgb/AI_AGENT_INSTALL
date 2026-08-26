@@ -9,7 +9,7 @@ function Assert([bool]$condition, [string]$message) {
   Write-Output "PASS | $message"
 }
 
-Assert ($bat.Contains('TOOL_VERSION=0.3.0')) 'Phiên bản giao diện là 0.3.0'
+Assert ($bat.Contains('TOOL_VERSION=0.4.0')) 'Phiên bản giao diện là 0.4.0'
 Assert ($bat.Contains(':download_with_progress')) 'Có helper tải xuống dùng chung'
 Assert ($bat.Contains('$res.ContentLength') -and $bat.Contains('$src.BeginRead($buf,')) 'Phần trăm tải dựa trên byte thực và Content-Length'
 Assert ($bat.Contains("('{0:N1}' -f (`$read/1MB))")) 'Hiển thị dung lượng MiB thực đã nhận'

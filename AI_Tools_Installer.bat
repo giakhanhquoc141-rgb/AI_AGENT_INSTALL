@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.3.0
+rem  AI Tools Installer - Phien ban 0.4.0
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.3.0"
+set "TOOL_VERSION=0.4.0"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -68,20 +68,13 @@ endlocal
 exit /b
 
 rem ------------------------------------------------------------
-rem  Thanh tiến trình theo mục cài đặt, có spinner nhẹ khi chờ.
-rem  Phần trăm là tiến độ pipeline (không giả mạo phần trăm byte tải).
+rem  Nhãn bước cài "Mục i/7 · tên" — không vẽ phần trăm giả.
+rem  Phần trăm thật xuất hiện ở tải (byte) và hoạt ảnh chờ cài/npm.
 rem ------------------------------------------------------------
 :progress_step
-set "PROGRESS_INDEX=%~1"
-set "PROGRESS_NAME=%~2"
-set /a PROGRESS_PCT=(PROGRESS_INDEX*100)/7
-set /a PROGRESS_SLOT=PROGRESS_INDEX%%4
-set "PROGRESS_SPINNER=|"
-if "%PROGRESS_SLOT%"=="1" set "PROGRESS_SPINNER=/"
-if "%PROGRESS_SLOT%"=="2" set "PROGRESS_SPINNER=-"
-if "%PROGRESS_SLOT%"=="3" set "PROGRESS_SPINNER=\\"
-powershell -NoProfile -Command "$p=[int]$env:PROGRESS_PCT;$n=[string]$env:PROGRESS_NAME;$s=[string]$env:PROGRESS_SPINNER;$done=[math]::Floor($p/5);$bar=('#'*$done)+('.'*(20-$done));Write-Host ('  '+$s+' ['+$bar+'] '+$p.ToString('D3')+([char]37)+'  '+$n) -ForegroundColor Cyan"
-exit /b 0
+if "%~2"=="" exit /b
+call :color_echo "1;36m" "  Mục %~1/7 · %~2"
+exit /b
 
 rem Tải theo luồng và hiển thị phần trăm byte thật. Nếu máy chủ không
 rem trả Content-Length thì hiện số MiB cùng spinner cho đến khi hoàn tất.
@@ -220,7 +213,8 @@ goto :unknown_mode
 :startup_update_check
 set "STARTUP_UPDATE_STATE="
 set "STARTUP_UPDATE_LATEST="
-for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri 'https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest' -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 8;$t=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($t)){'none|'}else{'found|'+$t.TrimStart('v','V')}}catch{'error|'}"') do (set "STARTUP_UPDATE_STATE=%%a" & set "STARTUP_UPDATE_LATEST=%%b")
+set "STARTUP_UPDATE_URL="
+for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri 'https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest' -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 8;$t=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($t)){'none||'}else{$a=$r.assets|?{$_.name -match '(?i)^AI_Tools_Installer\.bat$'}|Select-Object -First 1;if($null -eq $a){'found|'+$t.TrimStart('v','V')+'|'}else{'found|'+$t.TrimStart('v','V')+'|'+$a.browser_download_url}}}catch{'error||'}"') do (set "STARTUP_UPDATE_STATE=%%a" & set "STARTUP_UPDATE_LATEST=%%b" & set "STARTUP_UPDATE_URL=%%c")
 if /i "%STARTUP_UPDATE_STATE%"=="found" echo Kiểm tra cập nhật: bản phát hành mới nhất %STARTUP_UPDATE_LATEST% (đang dùng %TOOL_VERSION%).
 if /i "%STARTUP_UPDATE_STATE%"=="error" echo Kiểm tra cập nhật tạm thời không khả dụng; tiếp tục an toàn.
 if /i "%STARTUP_UPDATE_STATE%"=="none" echo Chưa có bản phát hành chính thức; tiếp tục cài đặt.
@@ -232,6 +226,7 @@ set "PIPELINE_RC=0"
 set "PLAN_ABORT="
 call :run_step "welcome" ":welcome_block"
 if errorlevel 1 set "PIPELINE_RC=1"
+call :offer_update
 call :scan_block
 if errorlevel 1 (set "PIPELINE_RC=1" & set "PLAN_ABORT=1")
 call :plan_block
@@ -248,18 +243,43 @@ if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_end
 exit /b %PIPELINE_RC%
 
+rem --------------------- offer self-update ---------------------
+rem Chạy sau welcome. Chỉ hỏi khi có bản phát hành mới + asset chính
+rem thức; chọn cập nhật sẽ tự thay thế file đang chạy rồi thoát.
+:offer_update
+if /i not "%STARTUP_UPDATE_STATE%"=="found" exit /b 0
+if "%STARTUP_UPDATE_URL%"=="" exit /b 0
+set "STARTUP_UPDATE_COMPARE="
+for /f "delims=" %%c in ('powershell -NoProfile -Command "$a='%TOOL_VERSION%';$b='%STARTUP_UPDATE_LATEST%';try{if([version]$b -gt [version]$a){'new'}else{'current'}}catch{'new'}"') do if not defined STARTUP_UPDATE_COMPARE set "STARTUP_UPDATE_COMPARE=%%c"
+if /i not "%STARTUP_UPDATE_COMPARE%"=="new" (
+  call :color_echo "1;32m" "Bạn đang dùng bản mới nhất: %TOOL_VERSION%."
+  exit /b 0
+)
+echo.
+call :color_echo "1;33m" "Có bản cập nhật mới: hiện tại %TOOL_VERSION% → mới nhất %STARTUP_UPDATE_LATEST%."
+call :color_echo "2;90m" "Nếu cập nhật, công cụ tự thay thế bản đang chạy rồi thoát — chạy lại để dùng bản mới."
+choice /c CB /n /m "  (C)ập nhật ngay / (B)ỏ qua, tiếp tục cài: "
+if errorlevel 2 (
+  call :color_echo "2;90m" "Tiếp tục với phiên bản hiện tại %TOOL_VERSION%."
+  call :log_append "startup-update ^| skip ^| %TOOL_VERSION% ^| user-declined ^| %date% %time%"
+  exit /b 0
+)
+call :color_echo "1;36m" "Đang tải bản cập nhật..."
+call :self_update_replace "%STARTUP_UPDATE_URL%" "%STARTUP_UPDATE_LATEST%"
+call :color_echo "1;32m" "Đã cập nhật lên %STARTUP_UPDATE_LATEST%. Hãy chạy lại AI_Tools_Installer.bat để tiếp tục."
+call :log_append "startup-update ^| ok ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATEST% ^| prompted ^| %date% %time%"
+goto :installer_exit
+
 :welcome_block
-call :color_echo "38;5;214m" "         *"
-call :color_echo "38;5;214m" "        / \"
-call :color_echo "38;5;214m" "       /   \"
-call :color_echo "38;5;214m" "      /     \"
-call :color_echo "38;5;214m" "     /       \"
-call :color_echo "38;5;214m" "     *********"
-call :color_echo "38;5;214m" "     \       /"
-call :color_echo "38;5;214m" "      \     /"
-call :color_echo "38;5;214m" "       \   /"
-call :color_echo "38;5;214m" "        \ /"
-call :color_echo "38;5;214m" "         *"
+call :color_echo "38;5;214m" "      *        *"
+call :color_echo "38;5;214m" "      **      **"
+call :color_echo "38;5;214m" "      * *    * *"
+call :color_echo "38;5;214m" "      *  *  *  *"
+call :color_echo "38;5;214m" "     /   ***   \"
+call :color_echo "38;5;214m" "    /  *  *  *  \"
+call :color_echo "38;5;214m" "    \  *  *  *  /"
+call :color_echo "38;5;214m" "     \   ***   /"
+call :color_echo "38;5;214m" "      \_______/"
 echo.
 call :color_echo "1;97m" "      %TOOL_NAME%"
 call :color_echo "1;97m" "     ────────────────────"
