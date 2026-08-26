@@ -415,7 +415,14 @@ call :install_git
 exit /b %errorlevel%
 
 :try_install_python
-call :try_install_stub "%ST_Python%" "Python"
+if /i "%ST_Python%"=="INSTALL" goto :try_install_python_run
+if /i "%ST_Python%"=="UPDATE" goto :try_install_python_run
+call :color_echo "2;90m" "  Python — đã có sẵn — bỏ qua"
+call :log_append "install | skip | already-current | Python | %date% %time%"
+exit /b 0
+:try_install_python_run
+call :color_echo "1;97m" "  Python — đang cài đặt..."
+call :install_python
 exit /b %errorlevel%
 :try_install_vscode
 call :try_install_stub "%ST_VSCode%" "VSCode"
@@ -434,6 +441,144 @@ exit /b %errorlevel%
 if /i "%~1"=="INSTALL" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
 if /i "%~1"=="UPDATE" call :log_append "install | skip | not-supported-yet | %~2 | %date% %time%"
 exit /b 0
+
+:install_python
+if not defined LOCALAPPDATA goto :ipy_unknown
+if "%VL_Python%"=="" goto :ipy_unknown
+if "%VL_Python%"=="-" goto :ipy_unknown
+powershell -NoProfile -Command "if('%VL_Python%' -cmatch '^3\.13\.\d+$'){exit 0}else{exit 1}" >nul 2>nul
+if errorlevel 1 goto :ipy_invalid
+set "PY_VER=%VL_Python%"
+set "PY_DIR=%LOCALAPPDATA%\Programs\Python\Python313"
+set "PY_EXE=%PY_DIR%\python.exe"
+set "PY_URL=https://www.python.org/ftp/python/%PY_VER%/python-%PY_VER%-amd64.exe"
+set "PY_TX_ID="
+for /f "delims=" %%g in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "PY_TX_ID=%%g"
+if not defined PY_TX_ID goto :ipy_prepare_fail
+set "PY_INSTALLER=%TEMP%\python-%PY_VER%-%PY_TX_ID%-amd64.exe"
+set "PY_PATH_STATE=%TEMP%\aitools-python-path-%PY_TX_ID%.xml"
+set "PY_MANIFEST_BACKUP=%TEMP%\aitools-python-manifest-%PY_TX_ID%.bak"
+set "PY_BACKUP=%LOCALAPPDATA%\Programs\Python\Python313.aitools-backup-%PY_TX_ID%"
+set "PY_MANIFEST=%LOCALAPPDATA%\AITools\manifest.txt"
+set "PY_OLD_PATH=%PATH%"
+set "PY_HAD_MANIFEST=0"
+set "PY_HAD_OLD=0"
+set "PY_BACKUP_READY=0"
+set "PY_WHERE_FIRST="
+if exist "%PY_INSTALLER%" goto :ipy_prepare_fail
+if exist "%PY_PATH_STATE%" goto :ipy_prepare_fail
+if exist "%PY_MANIFEST_BACKUP%" goto :ipy_prepare_fail
+echo.
+if /i not "%PROCESSOR_ARCHITECTURE%"=="AMD64" if /i not "%PROCESSOR_ARCHITEW6432%"=="AMD64" goto :ipy_32bit
+call :color_echo "1;97m" "  Đang tải Python %PY_VER% từ nguồn chính thức..."
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$ok=$false;for($i=1;$i -le 3;$i++){try{if(Test-Path -LiteralPath $env:PY_INSTALLER){Remove-Item -LiteralPath $env:PY_INSTALLER -Force};Invoke-WebRequest -Uri $env:PY_URL -OutFile $env:PY_INSTALLER -UseBasicParsing -TimeoutSec 120;if((Get-Item -LiteralPath $env:PY_INSTALLER).Length -le 0){throw 'empty'};$sig=Get-AuthenticodeSignature -LiteralPath $env:PY_INSTALLER;if($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch '(?i)Python Software Foundation'){throw 'signature'};$ok=$true;break}catch{if(Test-Path -LiteralPath $env:PY_INSTALLER){Remove-Item -LiteralPath $env:PY_INSTALLER -Force -ErrorAction SilentlyContinue};if($i -lt 3){Start-Sleep -Milliseconds 500}}};if(-not $ok){exit 1}" >nul 2>nul
+if errorlevel 1 goto :ipy_package_fail
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment');try{if($null -eq $k){$s=[pscustomobject]@{Exists=$false;Value='';Kind='ExpandString'}}else{try{$s=[pscustomobject]@{Exists=$true;Value=[string]$k.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);Kind=$k.GetValueKind('Path').ToString()}}catch{$s=[pscustomobject]@{Exists=$false;Value='';Kind='ExpandString'}}};$s|Export-Clixml -LiteralPath $env:PY_PATH_STATE}finally{if($k){$k.Dispose()}}" >nul 2>nul
+if errorlevel 1 goto :ipy_prepare_fail
+if exist "%PY_MANIFEST%" (copy /b /y "%PY_MANIFEST%" "%PY_MANIFEST_BACKUP%" >nul 2>nul & if errorlevel 1 goto :ipy_prepare_fail & set "PY_HAD_MANIFEST=1")
+if exist "%PY_DIR%" (
+  set "PY_HAD_OLD=1"
+  set "PY_BACKUP_READY=1"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';if(Test-Path -LiteralPath $env:PY_BACKUP){throw 'collision'};Move-Item -LiteralPath $env:PY_DIR -Destination $env:PY_BACKUP;if(-not (Test-Path -LiteralPath (Join-Path $env:PY_BACKUP 'python.exe'))){throw 'backup-incomplete'}" >nul 2>nul
+  if errorlevel 1 goto :ipy_prepare_fail
+)
+call :color_echo "1;97m" "  Đã xác minh chữ ký. Đang cài Python cho tài khoản hiện tại..."
+start "" /wait "%PY_INSTALLER%" InstallAllUsers=0 Include_launcher=0 PrependPath=0 Shortcuts=0 Include_test=0 /quiet /norestart
+if errorlevel 1 goto :ipy_install_fail
+call :path_append "%%LOCALAPPDATA%%\Programs\Python\Python313"
+if errorlevel 1 goto :ipy_path_fail
+call :path_append "%%LOCALAPPDATA%%\Programs\Python\Python313\Scripts"
+if errorlevel 1 goto :ipy_path_fail
+call :python_path_prioritize
+if errorlevel 1 goto :ipy_path_fail
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$expected=(Get-Item -LiteralPath $env:PY_EXE -ErrorAction Stop).FullName;$v=(& $expected --version 2^>^&1|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1};$cmd=(Get-Command python -CommandType Application -ErrorAction Stop).Source;if((Get-Item -LiteralPath $cmd).FullName -ine $expected){exit 1};$v=(& python --version 2^>^&1|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1}" >nul 2>nul
+if errorlevel 1 goto :ipy_verify_fail
+for /f "delims=" %%w in ('where.exe python 2^>nul') do if not defined PY_WHERE_FIRST set "PY_WHERE_FIRST=%%w"
+if not defined PY_WHERE_FIRST goto :ipy_verify_fail
+if /i not "%PY_WHERE_FIRST%"=="%PY_EXE%" goto :ipy_verify_fail
+call :manifest_append "Python" "%PY_VER%" "%PY_DIR%"
+if errorlevel 1 goto :ipy_manifest_fail
+call :log_append "install | ok | %PY_VER% | %PY_DIR% | %date% %time%"
+call :ipy_cleanup
+call :color_echo "1;32m" "  Python %PY_VER% đã cài xong."
+exit /b 0
+
+:python_path_prioritize
+set "PY_PATH_OUT=%TEMP%\aitools-python-session-%PY_TX_ID%.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$root=[Environment]::ExpandEnvironmentVariables('%%LOCALAPPDATA%%\Programs\Python\Python313');$scripts=Join-Path $root 'Scripts';$old='';$kind='ExpandString';$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment');try{if($null -ne $k){try{$kind=$k.GetValueKind('Path').ToString();$old=[string]$k.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}catch{}}}finally{if($k){$k.Dispose()}};$n={param($v)([Environment]::ExpandEnvironmentVariables([string]$v)).Trim().TrimEnd('\')};$keep=@($old.Split([char]';',[StringSplitOptions]::None)|?{(& $n $_) -ine $root -and (& $n $_) -ine $scripts});$value=@('%%LOCALAPPDATA%%\Programs\Python\Python313','%%LOCALAPPDATA%%\Programs\Python\Python313\Scripts')+$keep;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');try{$k.SetValue('Path',($value -join ';'),[Microsoft.Win32.RegistryValueKind]::$kind)}finally{$k.Dispose()};$session=@($root,$scripts)+@($env:Path.Split([char]';',[StringSplitOptions]::None)|?{(& $n $_) -ine $root -and (& $n $_) -ine $scripts});[IO.File]::WriteAllText($env:PY_PATH_OUT,($session -join ';'),[Text.UTF8Encoding]::new($false))" >nul 2>nul
+if errorlevel 1 exit /b 1
+for /f "usebackq delims=" %%p in ("%PY_PATH_OUT%") do set "PY_NEW_PATH=%%p"
+del /f /q "%PY_PATH_OUT%" >nul 2>nul
+if not defined PY_NEW_PATH exit /b 1
+set "PATH=%PY_NEW_PATH%"
+exit /b 0
+
+:ipy_invalid
+call :color_echo "1;33m" "  Phiên bản Python cần cài không hợp lệ. Không tải tệp cài đặt."
+call :log_append "install | skip | invalid-version | Python | %date% %time%"
+exit /b 1
+:ipy_unknown
+call :color_echo "1;31m" "  Không xác định được phiên bản Python để cài. Chạy lại để thử lần nữa."
+call :log_append "install | fail | unknown-version | Python | %date% %time%"
+exit /b 1
+:ipy_prepare_fail
+call :color_echo "1;31m" "  Không tạo được vùng phục hồi an toàn cho Python. Bản hiện có được giữ nguyên."
+call :log_append "install | fail | %PY_VER% | backup-failed | %date% %time%"
+if "%PY_BACKUP_READY%"=="1" (
+  call :ipy_rollback
+  if not errorlevel 1 call :ipy_cleanup
+) else call :ipy_cleanup
+exit /b 1
+:ipy_package_fail
+call :color_echo "1;31m" "  Tải hoặc xác minh Python thất bại sau 3 lần thử. Kiểm tra kết nối rồi chạy lại."
+call :log_append "install | fail | %PY_VER% | download-or-signature-failed | %date% %time%"
+call :ipy_cleanup
+exit /b 1
+:ipy_install_fail
+call :color_echo "1;31m" "  Trình cài Python không hoàn tất. Bản Python đang hoạt động được giữ nguyên."
+call :log_append "install | fail | %PY_VER% | installer-failed | %date% %time%"
+call :ipy_rollback
+if not errorlevel 1 call :ipy_cleanup
+exit /b 1
+:ipy_path_fail
+set "PY_FAIL_REASON=path-write-failed"
+goto :ipy_rollback_fail
+:ipy_verify_fail
+set "PY_FAIL_REASON=verify-failed"
+goto :ipy_rollback_fail
+:ipy_manifest_fail
+set "PY_FAIL_REASON=manifest-write-failed"
+:ipy_rollback_fail
+call :color_echo "1;31m" "  Python chưa vượt qua bước hoàn tất. Đang phục hồi PATH và hồ sơ cài đặt."
+call :ipy_rollback
+if errorlevel 1 (call :color_echo "1;31m" "  Phục hồi chưa hoàn tất; giữ lại tệp sao lưu để khôi phục thủ công." & call :log_append "install | fail | %PY_VER% | %PY_FAIL_REASON%-rollback-failed | %date% %time%") else (call :log_append "install | fail | %PY_VER% | %PY_FAIL_REASON% | %date% %time%" & call :ipy_cleanup)
+exit /b 1
+:ipy_rollback
+set "PY_ROLLBACK_RC=0"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$backupReady=$env:PY_BACKUP_READY -eq '1';$hadOld=$env:PY_HAD_OLD -eq '1';if($backupReady -and -not (Test-Path -LiteralPath (Join-Path $env:PY_BACKUP 'python.exe'))){throw 'backup-missing'};if($hadOld){if(Test-Path -LiteralPath $env:PY_DIR){Remove-Item -LiteralPath $env:PY_DIR -Recurse -Force};Move-Item -LiteralPath $env:PY_BACKUP -Destination $env:PY_DIR}else{if(Test-Path -LiteralPath $env:PY_DIR){Remove-Item -LiteralPath $env:PY_DIR -Recurse -Force}};if(Test-Path -LiteralPath $env:PY_BACKUP){Remove-Item -LiteralPath $env:PY_BACKUP -Recurse -Force};if(Test-Path -LiteralPath $env:PY_BACKUP){throw 'backup-cleanup-failed'}" >nul 2>nul
+if errorlevel 1 set "PY_ROLLBACK_RC=1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$s=Import-Clixml -LiteralPath $env:PY_PATH_STATE;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');try{if($s.Exists){$k.SetValue('Path',[string]$s.Value,[Microsoft.Win32.RegistryValueKind]::$($s.Kind))}else{$k.DeleteValue('Path',$false)}}finally{$k.Dispose()}" >nul 2>nul
+if errorlevel 1 set "PY_ROLLBACK_RC=1"
+set "PATH=%PY_OLD_PATH%"
+if "%PY_HAD_MANIFEST%"=="1" (copy /b /y "%PY_MANIFEST_BACKUP%" "%PY_MANIFEST%" >nul 2>nul & if errorlevel 1 set "PY_ROLLBACK_RC=1") else if exist "%PY_MANIFEST%" (del /f /q "%PY_MANIFEST%" >nul 2>nul & if exist "%PY_MANIFEST%" set "PY_ROLLBACK_RC=1")
+exit /b %PY_ROLLBACK_RC%
+:ipy_cleanup
+set "PY_CLEANUP_RC=0"
+if exist "%PY_INSTALLER%" del /f /q "%PY_INSTALLER%" >nul 2>nul
+if exist "%PY_INSTALLER%" set "PY_CLEANUP_RC=1"
+if exist "%PY_PATH_STATE%" del /f /q "%PY_PATH_STATE%" >nul 2>nul
+if exist "%PY_PATH_STATE%" set "PY_CLEANUP_RC=1"
+if exist "%PY_MANIFEST_BACKUP%" del /f /q "%PY_MANIFEST_BACKUP%" >nul 2>nul
+if exist "%PY_MANIFEST_BACKUP%" set "PY_CLEANUP_RC=1"
+if exist "%PY_PATH_OUT%" del /f /q "%PY_PATH_OUT%" >nul 2>nul
+if exist "%PY_PATH_OUT%" set "PY_CLEANUP_RC=1"
+if "%PY_CLEANUP_RC%"=="1" call :color_echo "1;31m" "  Không dọn được toàn bộ tệp tạm Python; tệp còn lại được giữ để phục hồi."
+exit /b %PY_CLEANUP_RC%
+
+:ipy_32bit
+call :color_echo "1;31m" "  Công cụ này chỉ hỗ trợ Windows 64-bit. Không có gì trên máy bị thay đổi."
+call :log_append "install | fail | %PY_VER% | unsupported-32bit | %date% %time%"
+exit /b 1
 
 :install_git
 rem --- MinGit per-user: mọi bước commit đều có snapshot để phục hồi khi lỗi ---
