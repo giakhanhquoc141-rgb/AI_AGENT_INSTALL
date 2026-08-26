@@ -821,7 +821,7 @@ exit /b 1
 
 :vscode_signature
 rem Signature validation is mandatory when Authenticode is available.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$c=Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue;if($null -eq $c){exit 0};$s=Get-AuthenticodeSignature -LiteralPath $env:VSCODE_INSTALLER;if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'Microsoft Corporation'){exit 1};exit 0" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$c=Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue;if($null -eq $c){exit 1};$s=Get-AuthenticodeSignature -LiteralPath $env:VSCODE_INSTALLER;if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'Microsoft Corporation'){exit 1};exit 0" >nul 2>nul
 exit /b %errorlevel%
 
 :ivsc_unknown
@@ -1221,6 +1221,7 @@ set "NODE_URL=https://nodejs.org/dist/v%VL_Node%/node-v%VL_Node%-win-x64.zip"
 set "NODE_ZIP=%TEMP%\node-v%VL_Node%-win-x64.zip"
 set "NODE_STAGE=%TEMP%\node-stage-%VL_Node%"
 set "NODE_DIR=%LOCALAPPDATA%\node"
+set "NODE_BACKUP=%TEMP%\node-backup-%RANDOM%-%RANDOM%"
 
 rem --- Tải ZIP (retry 3, $ProgressPreference='SilentlyContinue') ---
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$u='%NODE_URL%';$o='%NODE_ZIP%';$ok=$false;for($i=0;$i -lt 3;$i++){try{Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 120;if((Get-Item $o -ErrorAction SilentlyContinue).Length -gt 0){$ok=$true;break}}catch{if($i -ge 2){break};Start-Sleep -Milliseconds 500}};if(-not $ok){exit 1};exit 0"
@@ -1228,6 +1229,9 @@ if errorlevel 1 goto :inode_download_fail
 
 echo.
 call :color_echo "1;97m" "  Đã tải xong. Đang giải nén vào %LOCALAPPDATA%\node ..."
+
+if exist "%NODE_DIR%" move /y "%NODE_DIR%" "%NODE_BACKUP%" >nul 2>nul
+if exist "%NODE_DIR%" goto :inode_extract_fail
 
 rem --- Giải nén qua thư mục tạm rồi thay thế %LOCALAPPDATA%\node (sạch, an toàn khi chạy lại) ---
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$stage='%NODE_STAGE%';if(Test-Path $stage){Remove-Item -LiteralPath $stage -Recurse -Force};New-Item -ItemType Directory -Path $stage|Out-Null;Expand-Archive -LiteralPath '%NODE_ZIP%' -DestinationPath $stage -Force;$inner=Get-ChildItem -LiteralPath $stage -Directory|Select-Object -First 1;if($null -eq $inner){exit 1};if(Test-Path '%NODE_DIR%'){Remove-Item -LiteralPath '%NODE_DIR%' -Recurse -Force};Move-Item -LiteralPath $inner.FullName -Destination '%NODE_DIR%';exit 0"
@@ -1245,10 +1249,12 @@ if errorlevel 1 goto :inode_verify_fail
 
 rem --- Ghi manifest (append nếu chưa có) ---
 call :manifest_append "Node" "%NODE_VER%" "%NODE_DIR%"
+if errorlevel 1 goto :inode_manifest_fail
 
 call :log_append "install | ok | %NODE_VER% | %NODE_DIR% | %date% %time%"
 if exist "%NODE_ZIP%" del /f /q "%NODE_ZIP%" >nul 2>nul
 if exist "%NODE_STAGE%" rmdir /s /q "%NODE_STAGE%" >nul 2>nul
+if exist "%NODE_BACKUP%" rmdir /s /q "%NODE_BACKUP%" >nul 2>nul
 call :color_echo "1;32m" "  Node.js %NODE_VER% đã cài xong."
 exit /b 0
 
@@ -1259,24 +1265,34 @@ call :log_append "install | skip | unknown-version | - | %date% %time%"
 exit /b 0
 
 :inode_download_fail
+if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
 call :color_echo "1;31m" "  Tải Node.js %VL_Node% thất bại. Kiểm tra kết nối mạng rồi chạy lại."
 call :color_echo "2;90m" "  Lỗi tải một mục không làm ảnh hưởng các mục khác."
 call :log_append "install | fail | %VL_Node% | download-failed | %date% %time%"
 exit /b 1
 
 :inode_extract_fail
+if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
 call :color_echo "1;31m" "  Giải nén Node.js thất bại. Chạy lại để thử lần nữa."
 call :log_append "install | fail | %VL_Node% | extract-failed | %date% %time%"
 exit /b 1
 
 :inode_verify_fail
+if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
 call :color_echo "1;31m" "  Đã cài Node.js nhưng lệnh node/npm chưa chạy được. Kiểm tra PATH rồi chạy lại."
 call :log_append "install | fail | %VL_Node% | verify-failed | %date% %time%"
 exit /b 1
 
 :inode_path_fail
+if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
 call :color_echo "1;31m" "  Không ghi được PATH người dùng. Kiểm tra quyền rồi chạy lại."
 call :log_append "install | fail | %VL_Node% | path-write-failed | %date% %time%"
+exit /b 1
+
+:inode_manifest_fail
+if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
+call :color_echo "1;31m" "  Không ghi được manifest Node.js; bản cũ được phục hồi."
+call :log_append "install | fail | %VL_Node% | manifest-failed | %date% %time%"
 exit /b 1
 
 rem --------------------------- uninstall ---------------------------
@@ -1311,6 +1327,8 @@ if not "%UNINSTALL_STATE%"=="ok" if not "%UNINSTALL_FAILED%"=="0" (
   call :log_append "uninstall | fail | %UNINSTALL_REMOVED% | artifact-failure | %date% %time%"
   exit /b 1
 )
+findstr /i /c:"Autostart:OpenClaw gateway" "%UNINSTALL_MANIFEST%" >nul 2>nul
+if not errorlevel 1 openclaw.cmd gateway uninstall >nul 2>nul
 call :manifest_clear
 if errorlevel 1 (
   call :color_echo "1;31m" "Đã xử lý artifact nhưng không dọn được manifest/log."
