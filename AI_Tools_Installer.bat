@@ -166,7 +166,7 @@ endlocal & exit /b 0
 rem ========================= [router] ==========================
 
 :router
-if /i "%~1"=="--uninstall" goto :stub_uninstall
+if /i "%~1"=="--uninstall" goto :uninstall_manifest
 if /i "%~1"=="--update"    goto :stub_update
 if "%~1"==""               goto :run_install
 goto :unknown_mode
@@ -1267,10 +1267,37 @@ call :log_append "install | fail | %VL_Node% | path-write-failed | %date% %time%
 exit /b 1
 
 rem --------------------------- uninstall ---------------------------
-:stub_uninstall
-call :color_echo "1;97m" "Gỡ cài đặt chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
-call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
-call :log_append "uninstall | skip | - | - | %date% %time%"
+:uninstall_manifest
+call :manifest_validate
+if errorlevel 1 (
+  call :color_echo "1;31m" "Manifest không hợp lệ; dừng gỡ cài đặt để bảo vệ dữ liệu."
+  call :log_append "uninstall | fail | - | invalid-manifest | %date% %time%"
+  exit /b 1
+)
+set "UNINSTALL_RESULT=%TEMP%\aitools-uninstall-%RANDOM%-%RANDOM%.txt"
+if exist "%UNINSTALL_RESULT%" del /f /q "%UNINSTALL_RESULT%" >nul 2>nul
+set "UNINSTALL_MANIFEST=%LOCALAPPDATA%\AITools\manifest.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$m=$env:UNINSTALL_MANIFEST;$out=$env:UNINSTALL_RESULT;$removed=0;$skipped=0;$failed=0;$pathItems=@();$root=[Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%');$allowed=@((Join-Path $root 'node'),(Join-Path $root 'Programs\Git'),(Join-Path $root 'Programs\Python\Python313'),(Join-Path $root 'Programs\Microsoft VS Code'),(Join-Path $env:USERPROFILE '.vscode\extensions\anthropic.claude-code'));foreach($line in [IO.File]::ReadLines($m)){ $p=$line -split ' \| ',4;if($p.Count -ne 4){$failed++;continue};$item=$p[0];$raw=[Environment]::ExpandEnvironmentVariables($p[3]).Trim().TrimEnd('');if($item -like 'Autostart:HKCU Run:*'){ $name=$item.Substring('Autostart:HKCU Run:'.Length);$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Run',$true);try{$v=$k.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);if($null -ne $v -and ([string]$v -ceq $raw)){$k.DeleteValue($name,$false);$removed++}else{$skipped++}}finally{if($k){$k.Dispose()}};continue };if($item -eq 'Autostart:OpenClaw gateway'){$skipped++;continue};if($item -like '9Router combo *'){$skipped++;continue};if($item -eq 'OpenClaw' -or $item -eq '9Router'){if(-not (Test-Path -LiteralPath $raw -PathType Container)){$skipped++;continue};$names=if($item -eq 'OpenClaw'){@('openclaw.cmd','openclaw.ps1','openclaw.exe','node_modules\openclaw')}else{@('9router.cmd','9router.ps1','9router.exe','node_modules\9router')};foreach($n in $names){$q=Join-Path $raw $n;if(Test-Path -LiteralPath $q){Remove-Item -LiteralPath $q -Recurse -Force;$removed++}};continue};if($allowed -contains $raw){if(Test-Path -LiteralPath $raw){Remove-Item -LiteralPath $raw -Recurse -Force;$removed++}else{$skipped++};continue};$pathItems+=$raw;$skipped++ };$envPath=[Environment]::GetEnvironmentVariable('Path','User');if($null -ne $envPath){$parts=$envPath -split ';';$new=@($parts|?{$_ -and (($pathItems -notcontains ([Environment]::ExpandEnvironmentVariables($_).Trim().TrimEnd('')))}));if(($new -join ';') -cne $envPath){[Environment]::SetEnvironmentVariable('Path',($new -join ';'),'User')}};[IO.File]::WriteAllText($out,('ok|'+$removed+'|'+$skipped+'|'+$failed),[Text.UTF8Encoding]::new($false))" >nul 2>nul
+if not exist "%UNINSTALL_RESULT%" (
+  call :color_echo "1;31m" "Gỡ cài đặt thất bại; manifest được giữ nguyên."
+  call :log_append "uninstall | fail | - | execution | %date% %time%"
+  exit /b 1
+)
+for /f "tokens=1-4 delims=|" %%a in (%UNINSTALL_RESULT%) do (set "UNINSTALL_STATE=%%a" & set "UNINSTALL_REMOVED=%%b" & set "UNINSTALL_SKIPPED=%%c" & set "UNINSTALL_FAILED=%%d")
+del /f /q "%UNINSTALL_RESULT%" >nul 2>nul
+if not "%UNINSTALL_STATE%"=="ok" if not "%UNINSTALL_FAILED%"=="0" (
+  call :color_echo "1;31m" "Một số artifact không thể gỡ; manifest được giữ nguyên."
+  call :log_append "uninstall | fail | %UNINSTALL_REMOVED% | artifact-failure | %date% %time%"
+  exit /b 1
+)
+call :manifest_clear
+if errorlevel 1 (
+  call :color_echo "1;31m" "Đã xử lý artifact nhưng không dọn được manifest/log."
+  call :log_append "uninstall | fail | %UNINSTALL_REMOVED% | metadata-cleanup | %date% %time%"
+  exit /b 1
+)
+call :color_echo "1;32m" "Đã gỡ %UNINSTALL_REMOVED% artifact do AI Tools sở hữu; bỏ qua %UNINSTALL_SKIPPED% mục an toàn."
+call :log_append "uninstall | ok | %UNINSTALL_REMOVED% | manifest-owned-only | %date% %time%"
 exit /b 0
 
 rem --------------------------- self-update ---------------------------
@@ -1278,7 +1305,7 @@ rem --------------------------- self-update ---------------------------
 call :color_echo "1;97m" "Cập nhật chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
 call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
 call :log_append "update | skip | - | - | %date% %time%"
-exit /b 0
+goto :installer_exit
 
 :self_update_check_fixed
 call :init_colors
@@ -1380,4 +1407,8 @@ rem --------------------------- mode không hợp lệ -------------------------
 call :color_echo "1;97m" "Chế độ không hợp lệ."
 call :color_echo "2;90m" "Công cụ thoát an toàn. Chạy lại AI_Tools_Installer.bat để cài đặt."
 call :log_append "router | fail | - | - | %date% %time%"
+exit /b 0
+
+:installer_exit
+endlocal
 exit /b 0
