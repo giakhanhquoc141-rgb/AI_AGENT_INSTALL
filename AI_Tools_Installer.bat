@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.4.0
+rem  AI Tools Installer - Phien ban 0.4.1
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.4.0"
+set "TOOL_VERSION=0.4.1"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -271,15 +271,19 @@ call :log_append "startup-update ^| ok ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATE
 goto :installer_exit
 
 :welcome_block
-call :color_echo "38;5;214m" "      *        *"
-call :color_echo "38;5;214m" "      **      **"
-call :color_echo "38;5;214m" "      * *    * *"
-call :color_echo "38;5;214m" "      *  *  *  *"
-call :color_echo "38;5;214m" "     /   ***   \"
-call :color_echo "38;5;214m" "    /  *  *  *  \"
-call :color_echo "38;5;214m" "    \  *  *  *  /"
-call :color_echo "38;5;214m" "     \   ***   /"
-call :color_echo "38;5;214m" "      \_______/"
+call :color_echo "38;5;214m" "           █████╗   ██╗ ████████╗ ██████╗  ██████╗  ██╗      ██████╗"
+call :color_echo "38;5;214m" "           ██╔══██╗ ██║ ╚══██╔══╝ ██╔══██╗ ██╔══██╗ ██║      ██╔═══╝"
+call :color_echo "38;5;214m" "           ███████║ ██║    ██║    ██║  ██║ ██║  ██║ ██║      ██████╗"
+call :color_echo "38;5;214m" "           ██╔══██║ ██║    ██║    ██║  ██║ ██║  ██║ ██║      ╚═══██╗"
+call :color_echo "38;5;214m" "           ██║  ██║ ██║    ██║    ██║  ██║ ██║  ██║ ██║      ██████╔╝"
+call :color_echo "38;5;214m" "           ╚═╝  ╚═╝ ╚═╝    ╚═╝    ╚═════╝  ╚═════╝  ╚██████╗ ╚═════╝"
+echo.
+call :color_echo "38;5;214m" " ██╗ ███╗  ██╗ ██████╗  ████████╗ █████╗   ██╗      ██╗      ███████╗ ██████╗"
+call :color_echo "38;5;214m" " ██║ ████╗ ██║ ██╔═══╝  ╚══██╔══╝ ██╔══██╗ ██║      ██║      ██╔════╝ ██╔══██╗"
+call :color_echo "38;5;214m" " ██║ ██╔██╗██║ ██████╗     ██║    ███████║ ██║      ██║      █████╗   ██████╔╝"
+call :color_echo "38;5;214m" " ██║ ██║╚████║ ╚═══██╗     ██║    ██╔══██║ ██║      ██║      ██╔══╝   ██╔══██╗"
+call :color_echo "38;5;214m" " ██║ ██║  ╚██║ ██████╔╝    ██║    ██║  ██║ ██║      ██║      ███████╗ ██║  ██║"
+call :color_echo "38;5;214m" " ╚═╝ ╚═╝   ╚═╝ ╚═════╝     ╚═╝    ╚═╝  ╚═╝ ╚██████╗ ╚██████╗ ╚══════╝ ╚═╝  ╚═╝"
 echo.
 call :color_echo "1;97m" "      %TOOL_NAME%"
 call :color_echo "1;97m" "     ────────────────────"
