@@ -189,14 +189,16 @@ set "PLAN_ABORT="
 call :run_step "welcome" ":welcome_block"
 if errorlevel 1 set "PIPELINE_RC=1"
 call :scan_block
-if errorlevel 1 set "PIPELINE_RC=1"
+if errorlevel 1 (set "PIPELINE_RC=1" & set "PLAN_ABORT=1")
 call :plan_block
 if errorlevel 1 set "PIPELINE_RC=1"
-if defined PLAN_ABORT goto :run_install_end
+if defined PLAN_ABORT goto :run_install_report
 call :execute_block
 if errorlevel 1 set "PIPELINE_RC=1"
+if not "%PIPELINE_RC%"=="0" goto :run_install_report
 call :configure_block
 if errorlevel 1 set "PIPELINE_RC=1"
+:run_install_report
 call :report_block
 if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_end
@@ -678,7 +680,7 @@ set "NPM_VERSION="
 for /f "delims=" %%p in ('where npm.cmd 2^>nul') do if not defined NPM_SOURCE set "NPM_SOURCE=%%p"
 if not defined NPM_SOURCE exit /b 1
 if not defined LOCALAPPDATA exit /b 1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_SOURCE);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_SOURCE);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
 if errorlevel 1 exit /b 1
 set "NPM_CMD=npm.cmd"
 for /f "delims=" %%p in ('npm.cmd prefix -g 2^>nul') do if not defined NPM_PREFIX set "NPM_PREFIX=%%p"
@@ -687,7 +689,7 @@ for /f "delims=" %%p in ('npm.cmd bin -g 2^>nul') do if not defined NPM_BIN set 
 if not defined NPM_BIN set "NPM_BIN=%NPM_PREFIX%"
 for /f "delims=" %%p in ("%NPM_PREFIX%") do set "NPM_PREFIX=%%p"
 for /f "delims=" %%p in ("%NPM_BIN%") do set "NPM_BIN=%%p"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_PREFIX);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=[IO.Path]::GetFullPath($env:NPM_PREFIX);$u=[IO.Path]::GetFullPath($env:LOCALAPPDATA);$a=[IO.Path]::GetFullPath($env:APPDATA);if($p.StartsWith($u+'\',[StringComparison]::OrdinalIgnoreCase) -or ($a -and $p.StartsWith($a+'\',[StringComparison]::OrdinalIgnoreCase))){exit 0};exit 1" >nul 2>nul
 if errorlevel 1 exit /b 1
 call :path_append "%NPM_BIN%"
 if errorlevel 1 exit /b 1
