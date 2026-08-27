@@ -323,7 +323,7 @@ if /i not "%STARTUP_UPDATE_COMPARE%"=="new" (
 echo.
 call :color_echo "1;33m" "Có bản cập nhật mới: hiện tại %TOOL_VERSION% → mới nhất %STARTUP_UPDATE_LATEST%."
 call :color_echo "1;97m" "Bạn có muốn cập nhật installer không? "
-call :color_echo "1;33m" "(Y/N)"
+call :color_echo "1;33m" "[Y/N]"
 call :read_raw_key
 if errorlevel 1 exit /b 0
 if /i "%RAW_KEY%"=="Y" (
