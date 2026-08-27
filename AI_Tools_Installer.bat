@@ -726,7 +726,7 @@ if defined SEL_9Router (
 if defined PLAN_SKIP_NAMES set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES:~0,-2!"
 
 echo.
-if defined PLAN_SKIP_NAMES call :color_echo "2;90m" "  Bỏ qua (không chọn): !PLAN_SKIP_NAMES!"
+if defined PLAN_SKIP_NAMES call :color_echo "2;90m" "  Bỏ qua — không chọn: !PLAN_SKIP_NAMES!"
 call :color_echo "1;97m" "Tổng kết: "
 call :color_echo "1;32m" "!PLAN_INSTALL! cài mới"
 call :color_echo "1;97m" " · "
@@ -901,7 +901,7 @@ if defined SEL_9Router if /i not "%RESULT_9Router%"=="fail" (
     call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
   ) else (
     set "RESULT_9Router_Combo=ok"
-    call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng (deepseek-v4-flash + 3 đường dự phòng)."
+    call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng — deepseek-v4-flash + 3 đường dự phòng."
   )
 )
 if defined SEL_9Router if /i not "%RESULT_9Router%"=="fail" (
@@ -1016,9 +1016,9 @@ if defined SEL_OpenClaw (
 )
 
 if exist "%AUTOSTART_RESULT%" del /f /q "%AUTOSTART_RESULT%" >nul 2>nul
-if defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router và OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
-if defined AUTOSTART_9R_DONE if not defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router tự khởi động cùng Windows (không hiện cửa sổ console)."
-if not defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
+if defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router và OpenClaw tự khởi động cùng Windows — không hiện cửa sổ console."
+if defined AUTOSTART_9R_DONE if not defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router tự khởi động cùng Windows — không hiện cửa sổ console."
+if not defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký OpenClaw tự khởi động cùng Windows — không hiện cửa sổ console."
 exit /b 0
 
 :autostart_fail
@@ -1235,7 +1235,7 @@ if defined NPM_MAJOR powershell -NoProfile -ExecutionPolicy Bypass -Command "if(
 if not errorlevel 1 set "NPM_ALLOW_SCRIPTS=--allow-scripts openclaw"
 if "%NPM_MAJOR%"=="12" if not defined NPM_ALLOW_SCRIPTS goto :npm_openclaw_fail
 for /l %%a in (1,1,3) do (
-  call :color_echo "1;36m" "  OpenClaw — npm đang tải, giải nén và liên kết gói (lần %%a/3)..."
+  call :color_echo "1;36m" "  OpenClaw — npm đang tải, giải nén và liên kết gói — lần %%a/3..."
   if "%NPM_ALLOW_SCRIPTS%"=="" (npm.cmd install -g openclaw@latest --progress=true --loglevel=notice) else (npm.cmd install -g openclaw@latest %NPM_ALLOW_SCRIPTS% --progress=true --loglevel=notice)
   if not errorlevel 1 goto :npm_openclaw_verify
 )
@@ -1262,8 +1262,14 @@ exit /b 1
 set "NPM_RESULT_VERSION="
 call :npm_prepare
 if errorlevel 1 goto :npm_9router_fail
+rem 9Router đang chạy sẽ giữ khóa file, khiến npm không thay thế được.
+rem Tạm dừng quy trình 9Router cùng prefix rồi khởi động lại sau khi cài xong.
+set "NINE_WAS_RUNNING="
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$pf=$env:NPM_PREFIX;$p=@(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $c=$_.CommandLine; if(-not $c){$false}else{$c -and $c.IndexOf('9router',[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $c.IndexOf($pf,[StringComparison]::OrdinalIgnoreCase) -ge 0} });if($p.Count -gt 0){$p|ForEach-Object{Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue};Set-Content -LiteralPath ('%TEMP%\aitools-nine-running.txt') -Value '1' -Encoding Ascii}" >nul 2>nul
+if exist "%TEMP%\aitools-nine-running.txt" (set "NINE_WAS_RUNNING=1" & del /f /q "%TEMP%\aitools-nine-running.txt" >nul 2>nul)
+if defined NINE_WAS_RUNNING ping 127.0.0.1 -n 3 >nul
 for /l %%a in (1,1,3) do (
-  call :color_echo "1;36m" "  9Router — npm đang tải, giải nén và liên kết gói (lần %%a/3)..."
+  call :color_echo "1;36m" "  9Router — npm đang tải, giải nén và liên kết gói — lần %%a/3..."
   npm.cmd install -g 9router --progress=true --loglevel=notice
   if not errorlevel 1 goto :npm_9router_verify
 )
@@ -1281,11 +1287,20 @@ call :manifest_append "9Router" "%NPM_RESULT_VERSION%" "%NPM_BIN%"
 if errorlevel 1 goto :npm_9router_fail
 call :log_append "install | ok | %NPM_RESULT_VERSION% | 9Router | %date% %time%"
 call :color_echo "1;32m" "  9Router %NPM_RESULT_VERSION% đã cài xong."
+call :npm_9router_relaunch
 exit /b 0
 :npm_9router_fail
 call :color_echo "1;31m" "  Cài 9Router thất bại. Kiểm tra Node/npm rồi chạy lại."
 call :log_append "install | fail | npm | 9Router | %date% %time%"
+call :npm_9router_relaunch
 exit /b 1
+
+rem Khởi động lại 9Router sau khi npm cài xong nếu trước đó nó đang chạy.
+:npm_9router_relaunch
+if not defined NINE_WAS_RUNNING exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '9router.cmd' -ArgumentList @('--no-browser','--skip-update') -WindowStyle Hidden" >nul 2>nul
+call :color_echo "1;36m" "  Đã khởi động lại 9Router."
+exit /b 0
 
 :install_vscode
 rem --- VS Code User Setup x64, per-user only; installer must not auto-run ---
@@ -1337,7 +1352,7 @@ set "VSCODE_ROLLBACK_RC=0"
 call :ivsc_cleanup
 if errorlevel 1 exit /b 1
 call :log_append "install | ok | %VSCODE_VERSION% | VSCode | %date% %time%"
-call :color_echo "1;32m" "  Visual Studio Code đã cài xong (User Setup)."
+call :color_echo "1;32m" "  Visual Studio Code đã cài xong — User Setup."
 exit /b 0
 
 :vscode_download
@@ -1478,7 +1493,7 @@ for /l %%r in (1,1,3) do (
     if not errorlevel 1 goto :ipy_package_ready
   )
   if exist "%PY_INSTALLER%" del /f /q "%PY_INSTALLER%" >nul 2>nul
-  call :color_echo "1;33m" "  Gói Python chưa hợp lệ — tải lại toàn bộ (lần %%r/3)."
+  call :color_echo "1;33m" "  Gói Python chưa hợp lệ — tải lại toàn bộ — lần %%r/3."
 )
 goto :ipy_package_fail
 :ipy_package_ready
@@ -1636,7 +1651,7 @@ for /l %%r in (1,1,3) do (
   )
   if exist "%GIT_ZIP%" del /f /q "%GIT_ZIP%" >nul 2>nul
   if exist "%GIT_STAGE%" rmdir /s /q "%GIT_STAGE%" >nul 2>nul
-  call :color_echo "1;33m" "  Gói Git chưa hợp lệ — tải lại toàn bộ (lần %%r/3)."
+  call :color_echo "1;33m" "  Gói Git chưa hợp lệ — tải lại toàn bộ — lần %%r/3."
 )
 goto :igit_package_fail
 :igit_package_ready
@@ -2025,7 +2040,7 @@ if not exist "!UPDATE_NEW!" (
 set "UPDATE_NEW=!UPDATE_NEW!"
 set "UPDATE_OLD=!UPDATE_OLD!"
 set "UPDATE_LOG=%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log"
-start "" /b cmd /d /c "ping 127.0.0.1 -n 3 >nul & move /y \"!UPDATE_TARGET!\" \"!UPDATE_OLD!\" >nul && move /y \"!UPDATE_NEW!\" \"!UPDATE_TARGET!\" >nul || (if exist \"!UPDATE_OLD!\" move /y \"!UPDATE_OLD!\" \"!UPDATE_TARGET!\" >nul) & if exist \"!UPDATE_TARGET!\" del /f /q \"!UPDATE_OLD!\" >nul 2>nul & echo update-replace ^| ok ^| !TOOL_VERSION! -> !UPDATE_VERSION! ^| deferred-rename ^| %date% %time%>>\"!UPDATE_LOG!\""
+start "" /b powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABFAHIAcgBvAHIAQQBjAHQAaQBvAG4AUAByAGUAZgBlAHIAZQBuAGMAZQA9ACcAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAnAAoAJAB0AD0AJABlAG4AdgA6AFUAUABEAEEAVABFAF8AVABBAFIARwBFAFQACgAkAG8APQAkAGUAbgB2ADoAVQBQAEQAQQBUAEUAXwBPAEwARAAKACQAbgA9ACQAZQBuAHYAOgBVAFAARABBAFQARQBfAE4ARQBXAAoAJABsAD0AJABlAG4AdgA6AFUAUABEAEEAVABFAF8ATABPAEcACgAkAHYAPQAkAGUAbgB2ADoAVQBQAEQAQQBUAEUAXwBWAEUAUgBTAEkATwBOAAoAJABvAGwAZAA9ACQAZQBuAHYAOgBUAE8ATwBMAF8AVgBFAFIAUwBJAE8ATgAKAFMAdABhAHIAdAAtAFMAbABlAGUAcAAgAC0AUwBlAGMAbwBuAGQAcwAgADMACgBpAGYAKABUAGUAcwB0AC0AUABhAHQAaAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJAB0ACkAewAKACAAIABNAG8AdgBlAC0ASQB0AGUAbQAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJAB0ACAALQBEAGUAcwB0AGkAbgBhAHQAaQBvAG4AIAAkAG8AIAAtAEYAbwByAGMAZQAKACAAIABpAGYAKABUAGUAcwB0AC0AUABhAHQAaAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABuACkAewBNAG8AdgBlAC0ASQB0AGUAbQAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABuACAALQBEAGUAcwB0AGkAbgBhAHQAaQBvAG4AIAAkAHQAIAAtAEYAbwByAGMAZQB9AAoAIAAgAGUAbABzAGUAaQBmACgAVABlAHMAdAAtAFAAYQB0AGgAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACQAbwApAHsATQBvAHYAZQAtAEkAdABlAG0AIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACQAbwAgAC0ARABlAHMAdABpAG4AYQB0AGkAbwBuACAAJAB0ACAALQBGAG8AcgBjAGUAfQAKACAAIABSAGUAbQBvAHYAZQAtAEkAdABlAG0AIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACQAbwAgAC0ARgBvAHIAYwBlAAoAfQAKAGUAbABzAGUAaQBmACgAVABlAHMAdAAtAFAAYQB0AGgAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACQAbgApAHsATQBvAHYAZQAtAEkAdABlAG0AIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgACQAbgAgAC0ARABlAHMAdABpAG4AYQB0AGkAbwBuACAAJAB0ACAALQBGAG8AcgBjAGUAfQAKAEEAZABkAC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABsACAALQBWAGEAbAB1AGUAIAAoACcAdQBwAGQAYQB0AGUALQByAGUAcABsAGEAYwBlACAAfAAgAG8AawAgAHwAIAAnACsAJABvAGwAZAArACcAIAAtAD4AIAAnACsAJAB2ACsAJwAgAHwAIABkAGUAZgBlAHIAcgBlAGQALQByAGUAbgBhAG0AZQAgAHwAIAAnACsAKABHAGUAdAAtAEQAYQB0AGUAIAAtAEYAbwByAG0AYQB0ACAAJwB5AHkAeQB5AC0ATQBNAC0AZABkACAASABIADoAbQBtADoAcwBzACcAKQApAA== >nul 2>nul
 call :color_echo "1;32m" "Đã tải bản cập nhật. Công cụ sẽ thay thế an toàn sau khi phiên này kết thúc."
 call :log_append "update-replace ^| scheduled ^| !TOOL_VERSION! -> !UPDATE_VERSION! ^| deferred-rename ^| %date% %time%"
 endlocal & exit /b 0
