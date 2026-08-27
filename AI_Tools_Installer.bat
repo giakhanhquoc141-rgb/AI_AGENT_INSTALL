@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.4.2
+rem  AI Tools Installer - Phien ban 0.4.4
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.4.3"
+set "TOOL_VERSION=0.4.4"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -322,8 +322,17 @@ if /i not "%STARTUP_UPDATE_COMPARE%"=="new" (
 )
 echo.
 call :color_echo "1;33m" "Có bản cập nhật mới: hiện tại %TOOL_VERSION% → mới nhất %STARTUP_UPDATE_LATEST%."
-call :color_echo "2;90m" "Tiếp tục cài đặt; chạy lại với --update khi bạn muốn cập nhật installer."
-call :log_append "startup-update ^| available ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATEST% ^| deferred ^| %date% %time%"
+call :color_echo "1;97m" "Bạn có muốn cập nhật installer không? "
+call :color_echo "1;33m" "(Y/N)"
+call :read_raw_key
+if errorlevel 1 exit /b 0
+if /i "%RAW_KEY%"=="Y" (
+  call :color_echo "1;32m" "Đang cập nhật..."
+  call :self_update_replace "%STARTUP_UPDATE_URL%" "%STARTUP_UPDATE_LATEST%"
+  if not errorlevel 1 goto :installer_exit
+  call :color_echo "1;33m" "Cập nhật thất bại; tiếp tục với phiên bản hiện tại."
+)
+call :log_append "startup-update ^| deferred ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATEST% ^| %date% %time%"
 exit /b 0
 
 rem --------------------- tool selection ---------------------
@@ -1896,9 +1905,34 @@ exit /b 0
 
 rem --------------------------- self-update ---------------------------
 :stub_update
-call :color_echo "1;97m" "Cập nhật chưa được hỗ trợ trong phiên bản %TOOL_VERSION%."
-call :color_echo "2;90m" "Tính năng này sẽ có trong phiên bản tương lai. Công cụ thoát an toàn."
-call :log_append "update | skip | - | - | %date% %time%"
+setlocal EnableDelayedExpansion
+call :init_colors
+call :color_echo "1;97m" "Đang kiểm tra bản cập nhật..."
+set "UPDATE_API=https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest"
+set "UPDATE_RESULT=%TEMP%\aitools-update-result-%RANDOM%-%RANDOM%.txt"
+set "UPDATE_CURRENT=%TOOL_VERSION%"
+if exist "!UPDATE_RESULT!" del /f /q "!UPDATE_RESULT!" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri $env:UPDATE_API -Headers @{'User-Agent'='AI-Tools-Installer'} -UseBasicParsing -TimeoutSec 15;$tag=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($tag)){[IO.File]::WriteAllText($env:UPDATE_RESULT,'none;')}else{$a=$r.assets|?{$_.name -match '(?i)^AI_Tools_Installer\.bat$'}|Select-Object -First 1;if($null -eq $a){[IO.File]::WriteAllText($env:UPDATE_RESULT,('found;'+$tag.TrimStart('v','V')+';'))}else{[IO.File]::WriteAllText($env:UPDATE_RESULT,('found;'+$tag.TrimStart('v','V')+';'+$a.browser_download_url))}}catch{[IO.File]::WriteAllText($env:UPDATE_RESULT,'error;')}" >nul 2>nul
+if not exist "!UPDATE_RESULT!" (call :color_echo "1;31m" "Không thể kiểm tra bản cập nhật. Bản hiện tại vẫn an toàn." & call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api ^| %date% %time%" & goto :installer_exit)
+set "UPDATE_STATE="
+set "UPDATE_LATEST="
+set "UPDATE_URL="
+for /f "usebackq tokens=1-3 delims=;" %%a in ("!UPDATE_RESULT!") do (set "UPDATE_STATE=%%a" & set "UPDATE_LATEST=%%b" & set "UPDATE_URL=%%c")
+del /f /q "!UPDATE_RESULT!" >nul 2>nul
+if /i "!UPDATE_STATE!"=="error" (call :color_echo "1;31m" "Lỗi kết nối API. Thử lại sau." & call :log_append "update ^| fail ^| !UPDATE_CURRENT! ^| releases-api ^| %date% %time%" & goto :installer_exit)
+if /i "!UPDATE_STATE!"=="none" (call :color_echo "1;32m" "Chưa có bản phát hành chính thức." & call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| no-release ^| %date% %time%" & goto :installer_exit)
+set "UPDATE_COMPARE="
+for /f "delims=" %%c in ('powershell -NoProfile -Command "$a='!UPDATE_CURRENT!';$b='!UPDATE_LATEST!';if([version]$b -gt [version]$a){'new'}else{'current'}"') do if not defined UPDATE_COMPARE set "UPDATE_COMPARE=%%c"
+if /i "!UPDATE_COMPARE!"=="new" (
+  call :color_echo "1;33m" "Có bản mới: hiện tại !UPDATE_CURRENT! → mới nhất !UPDATE_LATEST!."
+  call :self_update_replace "!UPDATE_URL!" "!UPDATE_LATEST!"
+  if not errorlevel 1 goto :installer_exit
+  call :color_echo "1;31m" "Cập nhật thất bại. Bản hiện tại không bị thay đổi."
+  call :log_append "update ^| fail ^| !UPDATE_CURRENT! -> !UPDATE_LATEST! ^| replace ^| %date% %time%"
+) else (
+  call :color_echo "1;32m" "Bạn đang dùng bản mới nhất: !UPDATE_CURRENT!."
+  call :log_append "update ^| skip ^| !UPDATE_CURRENT! ^| latest=!UPDATE_LATEST! ^| %date% %time%"
+)
 goto :installer_exit
 
 :self_update_check_fixed
