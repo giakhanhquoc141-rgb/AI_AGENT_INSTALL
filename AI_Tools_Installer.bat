@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.4.1
+rem  AI Tools Installer - Phien ban 0.4.2
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.4.1"
+set "TOOL_VERSION=0.4.2"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -73,7 +73,8 @@ rem  Phần trăm thật xuất hiện ở tải (byte) và hoạt ảnh chờ c
 rem ------------------------------------------------------------
 :progress_step
 if "%~2"=="" exit /b
-call :color_echo "1;36m" "  Mục %~1/7 · %~2"
+if not defined SEL_COUNT set "SEL_COUNT=7"
+call :color_echo "1;36m" "  Mục %~1/%SEL_COUNT% · %~2"
 exit /b
 
 rem Tải theo luồng và hiển thị phần trăm byte thật. Nếu máy chủ không
@@ -125,6 +126,29 @@ rem ------------------------------------------------------------
 <nul set /p "=Bấm phím bất kỳ để tiếp tục... "
 pause >nul 2>nul
 echo.
+exit /b
+
+:read_raw_key
+set "RAW_KEY="
+if not defined AITEST_MODE goto :read_raw_key_console
+if not defined AITEST_KEYS exit /b 1
+set "RAW_KEY=!AITEST_KEYS:~0,1!"
+set "AITEST_KEYS=!AITEST_KEYS:~1!"
+if /i "!RAW_KEY!"=="U" set "RAW_KEY=UpArrow"
+if /i "!RAW_KEY!"=="D" set "RAW_KEY=DownArrow"
+if /i "!RAW_KEY!"=="S" set "RAW_KEY=Spacebar"
+if /i "!RAW_KEY!"=="E" set "RAW_KEY=Enter"
+if not defined RAW_KEY exit /b 1
+exit /b 0
+:read_raw_key_console
+for /f "delims=" %%k in ('powershell -NoProfile -Command "$ErrorActionPreference='Stop';try{if([Console]::IsInputRedirected){exit 2};$k=[Console]::ReadKey($true);if($k.KeyChar -eq [char]0){$k.Key.ToString()}elseif($k.Key -eq [ConsoleKey]::Spacebar){'Spacebar'}elseif($k.Key -eq [ConsoleKey]::Enter){'Enter'}else{[string]$k.KeyChar}}catch{exit 2}"') do if not defined RAW_KEY set "RAW_KEY=%%k"
+if not defined RAW_KEY exit /b 1
+exit /b 0
+
+:press_enter
+call :read_raw_key
+if errorlevel 1 exit /b 1
+if /i not "%RAW_KEY%"=="Enter" goto :press_enter
 exit /b
 
 rem ------------------------------------------------------------
@@ -204,9 +228,24 @@ endlocal & exit /b 0
 
 rem ========================= [router] ==========================
 
+rem --- Single-instance guard ---
+if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
+set "AITOOLS_LOCK=%LOCALAPPDATA%\AITools\.install-lock"
+if exist "%AITOOLS_LOCK%" (
+  call :color_echo "1;33m" "Trình cài đặt đang chạy. Đóng cửa sổ đó trước hoặc đợi hoàn tất."
+  goto :installer_exit
+)
+if not exist "%LOCALAPPDATA%\AITools" mkdir "%LOCALAPPDATA%\AITools" 2>nul
+echo %~pid>"%AITOOLS_LOCK%"
+
+rem --- Dọn temp file cũ từ các lần chạy trước ---
+for %%F in ("%TEMP%\aitools-*" "%TEMP%\node-backup-*" "%TEMP%\node-stage-*" "%TEMP%\python-*" "%TEMP%\git-*") do if exist "%%~F" del /f /q "%%~F" >nul 2>nul
+
 :router
 if /i "%~1"=="--uninstall" goto :uninstall_manifest
 if /i "%~1"=="--update"    goto :stub_update
+if /i "%~1"=="--test-selector" goto :test_selector
+if /i "%~1"=="--test-report" goto :test_report
 if "%~1"==""               goto :startup_update_check
 goto :unknown_mode
 
@@ -215,10 +254,25 @@ set "STARTUP_UPDATE_STATE="
 set "STARTUP_UPDATE_LATEST="
 set "STARTUP_UPDATE_URL="
 for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';try{$r=Invoke-RestMethod -Uri 'https://api.github.com/repos/giakhanhquoc141-rgb/AI_AGENT_INSTALL/releases/latest' -Headers @{'User-Agent'='AI-Tools-Installer'} -TimeoutSec 8;$t=[string]$r.tag_name;if([string]::IsNullOrWhiteSpace($t)){'none||'}else{$a=$r.assets|?{$_.name -match '(?i)^AI_Tools_Installer\.bat$'}|Select-Object -First 1;if($null -eq $a){'found|'+$t.TrimStart('v','V')+'|'}else{'found|'+$t.TrimStart('v','V')+'|'+$a.browser_download_url}}}catch{'error||'}"') do (set "STARTUP_UPDATE_STATE=%%a" & set "STARTUP_UPDATE_LATEST=%%b" & set "STARTUP_UPDATE_URL=%%c")
-if /i "%STARTUP_UPDATE_STATE%"=="found" echo Kiểm tra cập nhật: bản phát hành mới nhất %STARTUP_UPDATE_LATEST% (đang dùng %TOOL_VERSION%).
-if /i "%STARTUP_UPDATE_STATE%"=="error" echo Kiểm tra cập nhật tạm thời không khả dụng; tiếp tục an toàn.
-if /i "%STARTUP_UPDATE_STATE%"=="none" echo Chưa có bản phát hành chính thức; tiếp tục cài đặt.
 goto :run_install
+
+:test_selector
+set "AITEST_MODE=1"
+set "AITEST_KEYS=%~2"
+if not defined AITEST_KEYS exit /b 64
+call :tool_select_block
+if not defined SEL_COUNT exit /b 65
+echo CURSOR=%TOOL_CURSOR%;COUNT=%SEL_COUNT%;Git=%SEL_Git%;Node=%SEL_Node%;Python=%SEL_Python%;VSCode=%SEL_VSCode%;VSCodeExt=%SEL_VSCodeExt%;OpenClaw=%SEL_OpenClaw%;9Router=%SEL_9Router%
+exit /b 0
+
+:test_report
+set "AITEST_MODE=1"
+if "%~2"=="" (set "RESULT_Node=" & set "RESULT_Git=" & set "RESULT_Python=" & set "RESULT_VSCode=" & set "RESULT_VSCodeExt=" & set "RESULT_OpenClaw=" & set "RESULT_9Router=") else (for /f "tokens=1-7 delims=," %%a in ("%~2") do (set "RESULT_Node=%%a" & set "RESULT_Git=%%b" & set "RESULT_Python=%%c" & set "RESULT_VSCode=%%d" & set "RESULT_VSCodeExt=%%e" & set "RESULT_OpenClaw=%%f" & set "RESULT_9Router=%%g"))
+if "%~3"=="" (set "RESULT_9Router_Combo=" & set "RESULT_9Router_Autostart=" & set "RESULT_9Router_Onboarding=" & set "RESULT_OpenClaw_Autostart=" & set "RESULT_OpenClaw_Onboarding=") else (for /f "tokens=1-5 delims=," %%a in ("%~3") do (set "RESULT_9Router_Combo=%%a" & set "RESULT_9Router_Autostart=%%b" & set "RESULT_9Router_Onboarding=%%c" & set "RESULT_OpenClaw_Autostart=%%d" & set "RESULT_OpenClaw_Onboarding=%%e"))
+set "AITEST_KEYS=r"
+call :report_block
+if errorlevel 2 exit /b 0
+exit /b 66
 
 rem --------------------------- install ---------------------------
 :run_install
@@ -226,19 +280,22 @@ set "PIPELINE_RC=0"
 set "PLAN_ABORT="
 call :run_step "welcome" ":welcome_block"
 if errorlevel 1 set "PIPELINE_RC=1"
-call :offer_update
+if not "%PIPELINE_RC%"=="0" goto :run_install_end
+call :tool_select_block
+if errorlevel 1 (set "PIPELINE_RC=1" & goto :run_install_end)
 call :scan_block
 if errorlevel 1 (set "PIPELINE_RC=1" & set "PLAN_ABORT=1")
+if defined PLAN_ABORT goto :run_install_end
 call :plan_block
 if errorlevel 1 set "PIPELINE_RC=1"
 if defined PLAN_ABORT goto :run_install_end
 call :execute_block
 if errorlevel 1 set "PIPELINE_RC=1"
-if not "%PIPELINE_RC%"=="0" goto :run_install_report
 call :configure_block
 if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_report
 call :report_block
+if errorlevel 2 goto :run_install
 if errorlevel 1 set "PIPELINE_RC=1"
 :run_install_end
 exit /b %PIPELINE_RC%
@@ -247,6 +304,14 @@ rem --------------------- offer self-update ---------------------
 rem Chạy sau welcome. Chỉ hỏi khi có bản phát hành mới + asset chính
 rem thức; chọn cập nhật sẽ tự thay thế file đang chạy rồi thoát.
 :offer_update
+if /i "%STARTUP_UPDATE_STATE%"=="error" (
+  call :color_echo "1;33m" "Kiểm tra cập nhật tạm thời không khả dụng; tiếp tục an toàn."
+  exit /b 0
+)
+if /i "%STARTUP_UPDATE_STATE%"=="none" (
+  call :color_echo "2;90m" "Chưa có bản phát hành chính thức; tiếp tục cài đặt."
+  exit /b 0
+)
 if /i not "%STARTUP_UPDATE_STATE%"=="found" exit /b 0
 if "%STARTUP_UPDATE_URL%"=="" exit /b 0
 set "STARTUP_UPDATE_COMPARE="
@@ -257,18 +322,91 @@ if /i not "%STARTUP_UPDATE_COMPARE%"=="new" (
 )
 echo.
 call :color_echo "1;33m" "Có bản cập nhật mới: hiện tại %TOOL_VERSION% → mới nhất %STARTUP_UPDATE_LATEST%."
-call :color_echo "2;90m" "Nếu cập nhật, công cụ tự thay thế bản đang chạy rồi thoát — chạy lại để dùng bản mới."
-choice /c CB /n /m "  (C)ập nhật ngay / (B)ỏ qua, tiếp tục cài: "
-if errorlevel 2 (
-  call :color_echo "2;90m" "Tiếp tục với phiên bản hiện tại %TOOL_VERSION%."
-  call :log_append "startup-update ^| skip ^| %TOOL_VERSION% ^| user-declined ^| %date% %time%"
-  exit /b 0
+call :color_echo "2;90m" "Tiếp tục cài đặt; chạy lại với --update khi bạn muốn cập nhật installer."
+call :log_append "startup-update ^| available ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATEST% ^| deferred ^| %date% %time%"
+exit /b 0
+
+rem --------------------- tool selection ---------------------
+rem Chọn công cụ cần quét/cài (kiểu bmad-method module picker).
+rem Mặc định chọn cả 7; bấm số để bật/tắt, T/K/X để kết thúc.
+:tool_select_block
+setlocal EnableDelayedExpansion
+set "SEL_Git=1"
+set "SEL_Node=1"
+set "SEL_Python=1"
+set "SEL_VSCode=1"
+set "SEL_VSCodeExt=1"
+set "SEL_OpenClaw=1"
+set "SEL_9Router=1"
+set "SEL_COUNT=7"
+set "TOOL_CURSOR=1"
+set "DEPENDENCY_NOTE="
+
+:tool_select_redraw
+cls
+call :color_echo "1;36m" "CHỌN CÔNG CỤ"
+call :color_echo "2;90m" "────────────────────────────────────────────────────────────────────"
+call :color_echo "2;90m" "↑/↓ di chuyển · SPACE bật/tắt · ENTER xác nhận"
+echo.
+call :tool_select_row 1 SEL_Git "Git"
+call :tool_select_row 2 SEL_Node "Node.js"
+call :tool_select_row 3 SEL_Python "Python"
+call :tool_select_row 4 SEL_VSCode "Visual Studio Code"
+call :tool_select_row 5 SEL_VSCodeExt "Claude Code extension"
+call :tool_select_row 6 SEL_OpenClaw "OpenClaw"
+call :tool_select_row 7 SEL_9Router "9Router"
+echo.
+if defined DEPENDENCY_NOTE call :color_echo "1;33m" "!DEPENDENCY_NOTE!"
+call :color_echo "1;97m" "Dùng phím mũi tên để chọn:"
+call :read_raw_key
+if errorlevel 1 endlocal & exit /b 1
+if /i "!RAW_KEY!"=="UpArrow" (set /a TOOL_CURSOR-=1 & if !TOOL_CURSOR! LSS 1 set "TOOL_CURSOR=7" & goto :tool_select_redraw)
+if /i "!RAW_KEY!"=="DownArrow" (set /a TOOL_CURSOR+=1 & if !TOOL_CURSOR! GTR 7 set "TOOL_CURSOR=1" & goto :tool_select_redraw)
+if /i "!RAW_KEY!"=="Spacebar" goto :tool_select_toggle
+if /i "!RAW_KEY!"=="Enter" goto :tool_select_done
+goto :tool_select_redraw
+
+:tool_select_toggle
+set "DEPENDENCY_NOTE="
+if "!TOOL_CURSOR!"=="1" (if defined SEL_Git (set "SEL_Git=") else set "SEL_Git=1")
+if "!TOOL_CURSOR!"=="2" (if defined SEL_Node (set "SEL_Node=") else set "SEL_Node=1")
+if "!TOOL_CURSOR!"=="3" (if defined SEL_Python (set "SEL_Python=") else set "SEL_Python=1")
+if "!TOOL_CURSOR!"=="4" (if defined SEL_VSCode (set "SEL_VSCode=") else set "SEL_VSCode=1")
+if "!TOOL_CURSOR!"=="5" (if defined SEL_VSCodeExt (set "SEL_VSCodeExt=") else set "SEL_VSCodeExt=1")
+if "!TOOL_CURSOR!"=="6" (if defined SEL_OpenClaw (set "SEL_OpenClaw=") else set "SEL_OpenClaw=1")
+if "!TOOL_CURSOR!"=="7" (if defined SEL_9Router (set "SEL_9Router=") else set "SEL_9Router=1")
+call :tool_select_dependencies
+goto :tool_select_redraw
+
+:tool_select_dependencies
+if defined SEL_VSCodeExt if not defined SEL_VSCode (set "SEL_VSCode=1" & set "DEPENDENCY_NOTE=Đã tự chọn Visual Studio Code — Claude Code extension cần VS Code.")
+if defined SEL_OpenClaw if not defined SEL_Node (set "SEL_Node=1" & set "DEPENDENCY_NOTE=Đã tự chọn Node.js — OpenClaw cần npm.")
+if defined SEL_9Router if not defined SEL_Node (set "SEL_Node=1" & set "DEPENDENCY_NOTE=Đã tự chọn Node.js — 9Router cần npm.")
+exit /b
+
+:tool_select_row
+set "ROW_BOX=[ ]"
+if defined %~2 set "ROW_BOX=[✓]"
+if "%TOOL_CURSOR%"=="%~1" if defined VT_OK (echo %ESC%[7m !ROW_BOX! %~3 %ESC%[0m) else (echo ^> !ROW_BOX! %~3)
+if not "%TOOL_CURSOR%"=="%~1" echo   !ROW_BOX! %~3
+exit /b
+
+:tool_select_done
+call :tool_select_dependencies
+set "SEL_COUNT=0"
+if defined SEL_Git set /a SEL_COUNT+=1
+if defined SEL_Node set /a SEL_COUNT+=1
+if defined SEL_Python set /a SEL_COUNT+=1
+if defined SEL_VSCode set /a SEL_COUNT+=1
+if defined SEL_VSCodeExt set /a SEL_COUNT+=1
+if defined SEL_OpenClaw set /a SEL_COUNT+=1
+if defined SEL_9Router set /a SEL_COUNT+=1
+if "%SEL_COUNT%"=="0" (
+  set "DEPENDENCY_NOTE=Bạn cần chọn ít nhất 1 công cụ."
+  goto :tool_select_redraw
 )
-call :color_echo "1;36m" "Đang tải bản cập nhật..."
-call :self_update_replace "%STARTUP_UPDATE_URL%" "%STARTUP_UPDATE_LATEST%"
-call :color_echo "1;32m" "Đã cập nhật lên %STARTUP_UPDATE_LATEST%. Hãy chạy lại AI_Tools_Installer.bat để tiếp tục."
-call :log_append "startup-update ^| ok ^| %TOOL_VERSION% -> %STARTUP_UPDATE_LATEST% ^| prompted ^| %date% %time%"
-goto :installer_exit
+call :log_append "select | ok | %SEL_COUNT% mục | - | %date% %time%"
+endlocal & set "SEL_Git=%SEL_Git%" & set "SEL_Node=%SEL_Node%" & set "SEL_Python=%SEL_Python%" & set "SEL_VSCode=%SEL_VSCode%" & set "SEL_VSCodeExt=%SEL_VSCodeExt%" & set "SEL_OpenClaw=%SEL_OpenClaw%" & set "SEL_9Router=%SEL_9Router%" & set "SEL_COUNT=%SEL_COUNT%" & set "TOOL_CURSOR=%TOOL_CURSOR%" & exit /b 0
 
 :welcome_block
 call :color_echo "38;5;214m" "           █████╗   ██╗ ████████╗ ██████╗  ██████╗  ██╗      ██████╗"
@@ -292,35 +430,64 @@ call :color_echo "1;97m" "     Phiên bản %TOOL_VERSION%"
 echo.
 call :color_echo "1;97m" "   %TOOL_INTRO%"
 echo.
-call :press_any_key
-exit /b 0
+call :offer_update
+echo.
+call :color_echo "1;97m" "Trình cài đặt sẽ:"
+echo   1. Cho bạn chọn công cụ
+echo   2. Quét phiên bản đã có và phiên bản mới nhất
+echo   3. Hiển thị kế hoạch trước khi thay đổi máy
+echo   4. Cài, xác minh và báo cáo từng mục
+echo.
+call :color_echo "1;33m" "Nhấn ENTER để bắt đầu"
+call :press_enter
+exit /b %errorlevel%
 
 :scan_block
 setlocal EnableDelayedExpansion
-call :color_echo "1;97m" "Bước quét máy — kiểm tra 7 mục..."
+set "NET_ERR="
+for %%I in (Git Node Python VSCode VSCodeExt OpenClaw 9Router) do (set "ST_%%I=" & set "VR_%%I=" & set "VL_%%I=")
+call :color_echo "1;97m" "Bước 3/7 — Quét máy — kiểm tra !SEL_COUNT! mục đã chọn..."
 echo.
+
+rem --- Chỉ quét mục đã chọn; mục không chọn gán SKIP trước ---
+set "SCAN_ITEM_LIST="
+if defined SEL_Git set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'Git',"
+if defined SEL_Node set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'Node',"
+if defined SEL_Python set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'Python',"
+if defined SEL_VSCode set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'VSCode',"
+if defined SEL_VSCodeExt set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'VSCodeExt',"
+if defined SEL_OpenClaw set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'OpenClaw',"
+if defined SEL_9Router set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST!'9Router',"
+if defined SCAN_ITEM_LIST set "SCAN_ITEM_LIST=!SCAN_ITEM_LIST:~0,-1!"
+if not defined SEL_Git (set "ST_Git=SKIP" & set "VR_Git=-" & set "VL_Git=-")
+if not defined SEL_Node (set "ST_Node=SKIP" & set "VR_Node=-" & set "VL_Node=-")
+if not defined SEL_Python (set "ST_Python=SKIP" & set "VR_Python=-" & set "VL_Python=-")
+if not defined SEL_VSCode (set "ST_VSCode=SKIP" & set "VR_VSCode=-" & set "VL_VSCode=-")
+if not defined SEL_VSCodeExt (set "ST_VSCodeExt=SKIP" & set "VR_VSCodeExt=-" & set "VL_VSCodeExt=-")
+if not defined SEL_OpenClaw (set "ST_OpenClaw=SKIP" & set "VR_OpenClaw=-" & set "VL_OpenClaw=-")
+if not defined SEL_9Router (set "ST_9Router=SKIP" & set "VR_9Router=-" & set "VL_9Router=-")
 
 rem --- PowerShell version-check: phát hiện, lấy bản mới nhất, quyết định (AD-2/AD-6) ---
 set "S1=$ErrorActionPreference='SilentlyContinue';function P($s){[Console]::WriteLine($s)};function E($s){[Console]::Error.WriteLine($s)};function W($s){[Console]::Error.Write($s)};function Sen($x){if($x -eq ''){return '-'};return $x};"
 set "S2=function S3($v){$m=[regex]::Match([string]$v,'\d+\.\d+\.\d+');if($m.Success){return $m.Value};return ''};"
 set "S3=function Cmp3($a,$b){$A=($a -split '\.');$B=($b -split '\.');for($i=0;$i -lt 3;$i++){$x=[int]$A[$i];$y=[int]$B[$i];if($x -gt $y){return 1};if($x -lt $y){return -1}};return 0};"
-set "S4=function RetryC($cb){for($i=0;$i -lt 3;$i++){$j=$null;try{$j=Start-Job -ScriptBlock $cb;$tick=0;$sw=[Diagnostics.Stopwatch]::StartNew();while($j.State -eq 'Running' -or $j.State -eq 'NotStarted'){W (([char]13)+'    '+@('|','/','-','\')[$tick%%4]+' Đang kết nối '+$script:active+' — lần '+($i+1)+'/3...');Start-Sleep -Milliseconds 120;$tick++;if($sw.Elapsed.TotalSeconds -gt 20){Stop-Job -Job $j -ErrorAction SilentlyContinue;throw 'network-timeout'}};if($j.State -ne 'Completed'){throw 'network-job-failed'};$r=@(Receive-Job -Job $j -ErrorAction Stop);W (([char]13)+'    OK Đã kiểm tra '+$script:active+'                         '+[Environment]::NewLine);return $r}catch{W (([char]13)+'    LỖI Kết nối '+$script:active+' chưa thành công.              '+[Environment]::NewLine);if($i -ge 2){throw};Start-Sleep -Milliseconds 300}finally{if($null -ne $j){Remove-Job -Job $j -Force -ErrorAction SilentlyContinue}}};throw 'retry-failed'};"
+set "S4=function RetryC($cb){for($i=0;$i -lt 3;$i++){$j=$null;try{$j=Start-Job -ScriptBlock $cb;$tick=0;$sw=[Diagnostics.Stopwatch]::StartNew();while($j.State -eq 'Running' -or $j.State -eq 'NotStarted'){W (([char]13)+'    '+@('|','/','-','\')[$tick%%4]+' Đang kết nối '+$script:active+' — lần '+($i+1)+'/3...');Start-Sleep -Milliseconds 120;$tick++;if($sw.Elapsed.TotalSeconds -gt 20){Stop-Job -Job $j -ErrorAction SilentlyContinue;throw 'network-timeout'}};if($j.State -ne 'Completed'){throw 'network-job-failed'};$r=@(Receive-Job -Job $j -ErrorAction Stop);W (([char]13)+'    OK Đã kiểm tra '+$script:active+'                         '+[Environment]::NewLine);return $r}catch{W (([char]13)+'    LỖI Kết nối '+$script:active+' chưa thành công.              '+[Environment]::NewLine);if($i -ge 2){throw};Start-Sleep -Milliseconds 300}finally{if($null -ne $j){Remove-Job -Job $j -Force -ErrorAction SilentlyContinue}}}};"
 set "S5=function Cur($it){switch($it){'Git'{$c=Get-Command git -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& git --version 2>$null)|Out-String;$m=[regex]::Match($o,'\d+\.\d+\.\d+(\.windows\.[0-9]+)?');if($m.Success){return $m.Value};return ''};'Node'{$c=Get-Command node -ErrorAction SilentlyContinue;if($null -eq $c){return ''};if($c.Source -match '(?i)openclaw'){return ''};$o=(& node --version 2>$null)|Out-String;return (S3 $o)};'Python'{$c=Get-Command python -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& python --version 2>&1)|Out-String;$m=[regex]::Match($o,'Python\s+(\d+\.\d+(\.\d+)?)');if(-not $m.Success){return ''};return $m.Groups[1].Value};'VSCode'{$c=Get-Command code -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=@(& code --version 2>$null);if($o.Count -ge 1){return ($o[0].Trim())};return ''};'VSCodeExt'{$c=Get-Command code -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=@(& code --list-extensions --show-versions 2>$null);foreach($l in $o){if($l -match '(?i)anthropic\.claude-code'){$m=[regex]::Match($l,'@([0-9][^@ ]*)');if($m.Success){return $m.Groups[1].Value};return 'installed'}};return ''};'OpenClaw'{$c=Get-Command openclaw -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=((& openclaw --version 2>$null)|Out-String).Trim();$t=@($o -split '\s+');if($t.Count -ge 2){return $t[1]};return $o};'9Router'{$c=Get-Command 9router -ErrorAction SilentlyContinue;if($null -eq $c){return ''};$o=(& 9router --version 2>$null)|Out-String;return (S3 $o)}};return ''};"
 set "S6=function Latest($it){switch($it){'Git'{$d=RetryC {(Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 -Headers @{'User-Agent'='AI-Tools-Installer'})};return ([string]$d.tag_name).TrimStart('v')};'Node'{$d=RetryC {(Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};$best='';foreach($e in @($d)){if($e.lts -eq $false){continue};$v=S3 $e.version;if($v -eq ''){continue};if((Cmp3 $v '22.22.3') -ge 0 -and (Cmp3 $v '23.0.0') -lt 0){}elseif((Cmp3 $v '24.15.0') -ge 0 -and (Cmp3 $v '25.0.0') -lt 0){}else{continue};if($best -eq '' -or (Cmp3 $v $best) -gt 0){$best=$v}};return $best};'Python'{$d=RetryC {(Invoke-RestMethod -Uri 'https://www.python.org/api/v2/downloads/release/' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};$best='';foreach($e in @($d)){if($e.is_prerelease){continue};$v=S3 $e.name;if($v -notmatch '^3\.13\.'){continue};if($best -eq '' -or (Cmp3 $v $best) -gt 0){$best=$v}};return $best};'VSCode'{$d=RetryC {(Invoke-RestMethod -Uri 'https://api.github.com/repos/microsoft/vscode/releases/latest' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 -Headers @{'User-Agent'='AI-Tools-Installer'})};return ([string]$d.tag_name).TrimStart('v')};'OpenClaw'{$d=RetryC {(Invoke-RestMethod -Uri 'https://registry.npmjs.org/-/package/openclaw/dist-tags' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};return ([string]$d.latest)};'9Router'{$d=RetryC {(Invoke-RestMethod -Uri 'https://registry.npmjs.org/-/package/9router/dist-tags' -UseBasicParsing -ErrorAction Stop -TimeoutSec 15)};return (S3 $d.latest)}};return ''};"
 set "S7=function Decide($it,$cur,$lat){if($it -eq 'VSCodeExt'){if($cur -ne ''){return 'SKIP'};return 'INSTALL'};if($cur -eq ''){return 'INSTALL'};if($lat -eq ''){return 'SKIP'};if($it -eq 'OpenClaw'){if($cur.CompareTo($lat) -ge 0){return 'SKIP'};return 'UPDATE'};if($it -eq 'Git'){$gc=$cur -replace '\.windows\.','.';$gl=$lat -replace '\.windows\.','.';try{if(([version]$gc).CompareTo([version]$gl) -ge 0){return 'SKIP'};return 'UPDATE'}catch{return 'SKIP'}};$c=S3 $cur;$l=S3 $lat;if($c -eq '' -or $l -eq ''){return 'SKIP'};if((Cmp3 $c $l) -ge 0){return 'SKIP'};return 'UPDATE'};"
-set "S8=[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$neterr=0;$items=@('Git','Node','Python','VSCode','VSCodeExt','OpenClaw','9Router');$idx=0;foreach($it in $items){$script:active=$it;E ('    '+@('|','/','-','\')[$idx%%4]+' Đang rà '+$it+'...');$cur='';try{$cur=Cur $it}catch{$cur=''};$lat='';if($it -ne 'VSCodeExt'){try{$lat=Latest $it}catch{$lat='';$neterr++}};$dec=Decide $it $cur $lat;$idx++;$pct=[int][math]::Floor(($idx*100)/$items.Count);$done=[int][math]::Floor($pct/5);E ('    ['+('#'*$done)+('.'*(20-$done))+'] '+$pct.ToString('D3')+([char]37)+'  Đã rà '+$it);P ('{0}|{1}|{2}|{3}' -f $it,(Sen $cur),(Sen $lat),$dec)};P ('NETERR|{0}' -f $neterr)"
+set "S8=[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$neterr=0;$items=@(!SCAN_ITEM_LIST!);$idx=0;foreach($it in $items){$script:active=$it;E ('    '+@('|','/','-','\')[$idx%%4]+' Đang rà '+$it+'...');$cur='';try{$cur=Cur $it}catch{$cur=''};$lat='';if($it -ne 'VSCodeExt'){try{$lat=Latest $it}catch{$lat='';$neterr++}};$dec=Decide $it $cur $lat;$idx++;$pct=[int][math]::Floor(($idx*100)/$items.Count);$done=[int][math]::Floor($pct/5);E ('    ['+('#'*$done)+('.'*(20-$done))+'] '+$pct.ToString('D3')+([char]37)+'  Đã rà '+$it);P ('{0}|{1}|{2}|{3}' -f $it,(Sen $cur),(Sen $lat),$dec)};P ('NETERR|{0}' -f $neterr)"
 
 set "PSCMD=powershell -NoProfile -ExecutionPolicy Bypass -Command "!S1!!S2!!S3!!S4!!S5!!S6!!S7!!S8!""
 for /f "usebackq delims=" %%L in (`!PSCMD!`) do call :scan_parse "%%L"
 
 set "SCAN_MISSING="
-if not defined ST_Git set "SCAN_MISSING=1"
-if not defined ST_Node set "SCAN_MISSING=1"
-if not defined ST_Python set "SCAN_MISSING=1"
-if not defined ST_VSCode set "SCAN_MISSING=1"
-if not defined ST_VSCodeExt set "SCAN_MISSING=1"
-if not defined ST_OpenClaw set "SCAN_MISSING=1"
-if not defined ST_9Router set "SCAN_MISSING=1"
+if defined SEL_Git if not defined ST_Git set "SCAN_MISSING=1"
+if defined SEL_Node if not defined ST_Node set "SCAN_MISSING=1"
+if defined SEL_Python if not defined ST_Python set "SCAN_MISSING=1"
+if defined SEL_VSCode if not defined ST_VSCode set "SCAN_MISSING=1"
+if defined SEL_VSCodeExt if not defined ST_VSCodeExt set "SCAN_MISSING=1"
+if defined SEL_OpenClaw if not defined ST_OpenClaw set "SCAN_MISSING=1"
+if defined SEL_9Router if not defined ST_9Router set "SCAN_MISSING=1"
 if defined SCAN_MISSING (
   call :color_echo "1;31m" "Không thể đọc kết quả quét máy. Công cụ thoát an toàn."
   call :log_append "scan | fail | - | - | %date% %time%"
@@ -330,13 +497,13 @@ if defined SCAN_MISSING (
 
 echo.
 call :color_echo "1;97m" "Kết quả quét:"
-call :show_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!" 1
-call :show_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!" 1
-call :show_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!" 1
-call :show_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!" 1
-call :show_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!" 0
-call :show_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!" 1
-call :show_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!" 1
+call :show_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!" 1 SEL_Git
+call :show_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!" 1 SEL_Node
+call :show_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!" 1 SEL_Python
+call :show_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!" 1 SEL_VSCode
+call :show_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!" 0 SEL_VSCodeExt
+call :show_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!" 1 SEL_OpenClaw
+call :show_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!" 1 SEL_9Router
 
 set "SCAN_LOG_VER=git=!VR_Git!;node=!VR_Node!;python=!VR_Python!;vscode=!VR_VSCode!;claude-code=!VR_VSCodeExt!;openclaw=!VR_OpenClaw!;9router=!VR_9Router!"
 set "SCAN_RC=0"
@@ -348,6 +515,9 @@ if "!SCAN_RC!"=="1" (
   call :log_append "scan | fail | !SCAN_LOG_VER! | - | %date% %time%"
 ) else (
   call :log_append "scan | ok | !SCAN_LOG_VER! | - | %date% %time%"
+  echo.
+  call :color_echo "1;33m" "Nhấn ENTER để xem kế hoạch"
+  call :press_enter
 )
 endlocal & set "ST_Git=%ST_Git%" & set "VR_Git=%VR_Git%" & set "VL_Git=%VL_Git%" & set "ST_Node=%ST_Node%" & set "VR_Node=%VR_Node%" & set "VL_Node=%VL_Node%" & set "ST_Python=%ST_Python%" & set "VR_Python=%VR_Python%" & set "VL_Python=%VL_Python%" & set "ST_VSCode=%ST_VSCode%" & set "VR_VSCode=%VR_VSCode%" & set "VL_VSCode=%VL_VSCode%" & set "ST_VSCodeExt=%ST_VSCodeExt%" & set "VR_VSCodeExt=%VR_VSCodeExt%" & set "VL_VSCodeExt=%VL_VSCodeExt%" & set "ST_OpenClaw=%ST_OpenClaw%" & set "VR_OpenClaw=%VR_OpenClaw%" & set "VL_OpenClaw=%VL_OpenClaw%" & set "ST_9Router=%ST_9Router%" & set "VR_9Router=%VR_9Router%" & set "VL_9Router=%VL_9Router%" & set "NET_ERR=%NET_ERR%" & exit /b %SCAN_RC%
 
@@ -365,13 +535,19 @@ for /f "tokens=1-4 delims=|" %%a in ("%~1") do (
 exit /b 0
 
 :show_item
-rem %1 = tên hiển thị, %2 = quyết định, %3 = phiên bản hiện tại, %4 = phiên bản mới nhất, %5 = có kiểm tra bản mới nhất (1/0)
+rem %1 = tên hiển thị, %2 = quyết định, %3 = bản hiện tại, %4 = bản mới nhất, %5 = kiểm tra latest (1/0), %6 = biến SEL
 setlocal EnableDelayedExpansion
 set "NAME=%~1"
 set "ST=%~2"
 set "VR=%~3"
 set "VL=%~4"
 set "NO_LAT=%~5"
+set "SELVAR=%~6"
+if not "%SELVAR%"=="" if not defined %SELVAR% (
+  call :color_echo "2;90m" "  !NAME! — không chọn — bỏ qua"
+  endlocal
+  exit /b 0
+)
 if /i "!ST!"=="INSTALL" (
   call :color_echo "1;97m" "  !NAME! — chưa cài — cần cài đặt"
 ) else if /i "!ST!"=="UPDATE" (
@@ -393,57 +569,85 @@ rem --------------------------- plan ---------------------------
 setlocal EnableDelayedExpansion
 rem --- Guard: cần đủ run-state scan (ST_*) mới lập kế hoạch ---
 set "PLAN_MISSING="
-if not defined ST_Git set "PLAN_MISSING=1"
-if not defined ST_Node set "PLAN_MISSING=1"
-if not defined ST_Python set "PLAN_MISSING=1"
-if not defined ST_VSCode set "PLAN_MISSING=1"
-if not defined ST_VSCodeExt set "PLAN_MISSING=1"
-if not defined ST_OpenClaw set "PLAN_MISSING=1"
-if not defined ST_9Router set "PLAN_MISSING=1"
+if defined SEL_Git if not defined ST_Git set "PLAN_MISSING=1"
+if defined SEL_Node if not defined ST_Node set "PLAN_MISSING=1"
+if defined SEL_Python if not defined ST_Python set "PLAN_MISSING=1"
+if defined SEL_VSCode if not defined ST_VSCode set "PLAN_MISSING=1"
+if defined SEL_VSCodeExt if not defined ST_VSCodeExt set "PLAN_MISSING=1"
+if defined SEL_OpenClaw if not defined ST_OpenClaw set "PLAN_MISSING=1"
+if defined SEL_9Router if not defined ST_9Router set "PLAN_MISSING=1"
 if defined PLAN_MISSING (
   call :color_echo "1;31m" "Không đủ dữ liệu quét máy để lập kế hoạch. Công cụ thoát an toàn."
   call :log_append "plan | skip | insufficient-scan | - | %date% %time%"
   endlocal & set "PLAN_ABORT=1" & exit /b 0
 )
 
-call :color_echo "1;97m" "Bước 3/6 — Kế hoạch cài đặt — còn 3 bước"
+call :color_echo "1;97m" "Bước 4/7 — Kế hoạch cài đặt — còn 3 bước"
 call :color_echo "2;90m" "Chưa có gì thay đổi trên máy cho tới khi bạn xác nhận."
 echo.
 
 set "PLAN_INSTALL=0"
 set "PLAN_UPDATE=0"
 set "PLAN_SKIP=0"
+set "PLAN_SKIP_NAMES="
 
-call :plan_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
-call :plan_count "!ST_Git!"
-call :plan_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
-call :plan_count "!ST_Node!"
-call :plan_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
-call :plan_count "!ST_Python!"
-call :plan_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
-call :plan_count "!ST_VSCode!"
-call :plan_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
-call :plan_count "!ST_VSCodeExt!"
-call :plan_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
-call :plan_count "!ST_OpenClaw!"
-call :plan_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
-call :plan_count "!ST_9Router!"
+if defined SEL_Git (
+  call :plan_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
+  call :plan_count "!ST_Git!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Git, "
+)
+if defined SEL_Node (
+  call :plan_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
+  call :plan_count "!ST_Node!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Node.js, "
+)
+if defined SEL_Python (
+  call :plan_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
+  call :plan_count "!ST_Python!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Python, "
+)
+if defined SEL_VSCode (
+  call :plan_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
+  call :plan_count "!ST_VSCode!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Visual Studio Code, "
+)
+if defined SEL_VSCodeExt (
+  call :plan_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
+  call :plan_count "!ST_VSCodeExt!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Claude Code, "
+)
+if defined SEL_OpenClaw (
+  call :plan_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
+  call :plan_count "!ST_OpenClaw!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!OpenClaw, "
+)
+if defined SEL_9Router (
+  call :plan_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
+  call :plan_count "!ST_9Router!"
+) else (
+  set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!9Router, "
+)
+if defined PLAN_SKIP_NAMES set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES:~0,-2!"
 
 echo.
+if defined PLAN_SKIP_NAMES call :color_echo "2;90m" "  Bỏ qua (không chọn): !PLAN_SKIP_NAMES!"
 call :color_echo "1;97m" "Tổng kết: !PLAN_INSTALL! cài mới · !PLAN_UPDATE! cập nhật · !PLAN_SKIP! bỏ qua"
 echo.
-call :color_echo "2;90m" "Bấm C để tiếp tục, H để hủy an toàn."
-choice /c CH /n /m "  (C/H) "
-if errorlevel 2 goto :plan_cancel
+call :color_echo "2;90m" "Phạm vi: tài khoản hiện tại · Không cần quyền Administrator"
+call :color_echo "2;90m" "Manifest: %%LOCALAPPDATA%%\AITools\manifest.txt"
+call :color_echo "1;33m" "Nhấn ENTER để bắt đầu cài đặt"
+call :color_echo "2;90m" "Muốn hủy? Hãy đóng cửa sổ trước khi bắt đầu."
+call :press_enter
+if errorlevel 1 endlocal & set "PLAN_ABORT=1" & exit /b 1
 call :color_echo "1;32m" "Đã xác nhận. Bắt đầu cài đặt..."
 call :log_append "plan | ok | confirmed | - | %date% %time%"
 endlocal & set "PLAN_ABORT=" & exit /b 0
-
-:plan_cancel
-call :color_echo "1;33m" "Đã hủy. Không có gì trên máy bị thay đổi."
-call :color_echo "2;90m" "Bạn có thể chạy lại bất cứ lúc nào."
-call :log_append "plan | skip | cancelled | - | %date% %time%"
-endlocal & set "PLAN_ABORT=1" & exit /b 0
 
 :plan_item
 rem %1 = tên hiển thị, %2 = quyết định, %3 = phiên bản hiện tại, %4 = phiên bản mới nhất
@@ -480,6 +684,7 @@ exit /b 0
 
 rem --------------------------- execute ---------------------------
 :execute_block
+setlocal EnableDelayedExpansion
 set "EXEC_RC=0"
 set "RESULT_Node="
 set "RESULT_Git="
@@ -488,72 +693,155 @@ set "RESULT_VSCode="
 set "RESULT_VSCodeExt="
 set "RESULT_OpenClaw="
 set "RESULT_9Router="
-call :color_echo "1;97m" "Bước 4/6 — Cài đặt — còn 2 bước"
+set "EXEC_I=0"
+call :color_echo "1;97m" "Bước 5/7 — Cài đặt — còn 2 bước"
 echo.
 call :color_echo "2;90m" "Đang cài đặt các mục trong kế hoạch..."
 echo.
-call :progress_step 1 "Node.js"
-call :try_install_node
-if errorlevel 1 (set "RESULT_Node=fail") else if not defined RESULT_Node set "RESULT_Node=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 2 "Git"
-call :try_install_git
-if errorlevel 1 (set "RESULT_Git=fail") else if not defined RESULT_Git set "RESULT_Git=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 3 "Python"
-call :try_install_python
-if errorlevel 1 (set "RESULT_Python=fail") else if not defined RESULT_Python set "RESULT_Python=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 4 "Visual Studio Code"
-call :try_install_vscode
-if errorlevel 1 (set "RESULT_VSCode=fail") else if not defined RESULT_VSCode set "RESULT_VSCode=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 5 "Claude Code extension"
-call :try_install_vscodeext
-if errorlevel 1 (set "RESULT_VSCodeExt=fail") else if not defined RESULT_VSCodeExt set "RESULT_VSCodeExt=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 6 "OpenClaw"
-call :try_install_openclaw
-if errorlevel 1 (set "RESULT_OpenClaw=fail") else if not defined RESULT_OpenClaw set "RESULT_OpenClaw=ok"
-if errorlevel 1 set "EXEC_RC=1"
-call :progress_step 7 "9Router"
-call :try_install_9router
-if errorlevel 1 (set "RESULT_9Router=fail") else if not defined RESULT_9Router set "RESULT_9Router=ok"
-if errorlevel 1 set "EXEC_RC=1"
+if defined SEL_Node (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "Node.js"
+  call :try_install_node
+  if errorlevel 1 (set "RESULT_Node=fail") else if /i "!ST_Node!"=="SKIP" (set "RESULT_Node=keep") else set "RESULT_Node=ok"
+  if errorlevel 1 set "EXEC_RC=1"
+) else (
+  set "RESULT_Node=skip"
+)
+if defined SEL_Git (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "Git"
+  call :try_install_git
+  if errorlevel 1 (set "RESULT_Git=fail") else if /i "!ST_Git!"=="SKIP" (set "RESULT_Git=keep") else set "RESULT_Git=ok"
+  if errorlevel 1 set "EXEC_RC=1"
+) else (
+  set "RESULT_Git=skip"
+)
+if defined SEL_Python (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "Python"
+  call :try_install_python
+  if errorlevel 1 (set "RESULT_Python=fail") else if /i "!ST_Python!"=="SKIP" (set "RESULT_Python=keep") else set "RESULT_Python=ok"
+  if errorlevel 1 set "EXEC_RC=1"
+) else (
+  set "RESULT_Python=skip"
+)
+if defined SEL_VSCode (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "Visual Studio Code"
+  call :try_install_vscode
+  if errorlevel 1 (set "RESULT_VSCode=fail") else if /i "!ST_VSCode!"=="SKIP" (set "RESULT_VSCode=keep") else set "RESULT_VSCode=ok"
+  if errorlevel 1 set "EXEC_RC=1"
+) else (
+  set "RESULT_VSCode=skip"
+)
+if defined SEL_VSCodeExt (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "Claude Code extension"
+  if /i "!RESULT_VSCode!"=="fail" (
+    set "RESULT_VSCodeExt=fail"
+    set "EXEC_RC=1"
+    call :color_echo "1;31m" "  Claude Code extension — bị chặn vì Visual Studio Code cài thất bại."
+  ) else (
+    call :try_install_vscodeext
+    if errorlevel 1 (set "RESULT_VSCodeExt=fail") else if /i "!ST_VSCodeExt!"=="SKIP" (set "RESULT_VSCodeExt=keep") else set "RESULT_VSCodeExt=ok"
+    if errorlevel 1 set "EXEC_RC=1"
+  )
+) else (
+  set "RESULT_VSCodeExt=skip"
+)
+if defined SEL_OpenClaw (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "OpenClaw"
+  if /i "!RESULT_Node!"=="fail" (
+    set "RESULT_OpenClaw=fail" & set "EXEC_RC=1"
+    call :color_echo "1;31m" "  OpenClaw — bị chặn vì Node.js cài thất bại."
+  ) else (
+    call :try_install_openclaw
+    if errorlevel 1 (set "RESULT_OpenClaw=fail") else if /i "!ST_OpenClaw!"=="SKIP" (set "RESULT_OpenClaw=keep") else set "RESULT_OpenClaw=ok"
+    if errorlevel 1 set "EXEC_RC=1"
+  )
+) else (
+  set "RESULT_OpenClaw=skip"
+)
+if defined SEL_9Router (
+  set /a EXEC_I+=1
+  call :progress_step !EXEC_I! "9Router"
+  if /i "!RESULT_Node!"=="fail" (
+    set "RESULT_9Router=fail" & set "EXEC_RC=1"
+    call :color_echo "1;31m" "  9Router — bị chặn vì Node.js cài thất bại."
+  ) else (
+    call :try_install_9router
+    if errorlevel 1 (set "RESULT_9Router=fail") else if /i "!ST_9Router!"=="SKIP" (set "RESULT_9Router=keep") else set "RESULT_9Router=ok"
+    if errorlevel 1 set "EXEC_RC=1"
+  )
+) else (
+  set "RESULT_9Router=skip"
+)
 echo.
-if "%EXEC_RC%"=="0" (
+if "!EXEC_RC!"=="0" (
   call :color_echo "1;32m" "Bước cài đặt hoàn tất."
 ) else (
   call :color_echo "1;31m" "Bước cài đặt có lỗi ở một hoặc nhiều mục. Xem log để biết chi tiết."
 )
-exit /b %EXEC_RC%
+endlocal & set "RESULT_Node=%RESULT_Node%" & set "RESULT_Git=%RESULT_Git%" & set "RESULT_Python=%RESULT_Python%" & set "RESULT_VSCode=%RESULT_VSCode%" & set "RESULT_VSCodeExt=%RESULT_VSCodeExt%" & set "RESULT_OpenClaw=%RESULT_OpenClaw%" & set "RESULT_9Router=%RESULT_9Router%" & set "EXEC_RC=%EXEC_RC%" & exit /b %EXEC_RC%
 
 rem --------------------------- configure ---------------------------
 rem Tạo đúng một combo qua API quản trị cục bộ của 9Router. API này chỉ
 rem đọc/ghi danh sách combo; tuyệt đối không gửi hoặc đọc API key.
 :configure_block
+setlocal EnableDelayedExpansion
 set "CONFIGURE_RC=0"
-set "RESULT_Combo="
-set "RESULT_Autostart="
-set "RESULT_Onboarding="
-call :color_echo "1;97m" "Bước 5/6 — Cấu hình lần đầu — combo, khởi động cùng Windows và dashboard"
-call :progress_step 7 "Cấu hình combo và tự khởi động"
+set "RESULT_9Router_Combo=skip"
+set "RESULT_9Router_Autostart=skip"
+set "RESULT_9Router_Onboarding=skip"
+set "RESULT_OpenClaw_Autostart=skip"
+set "RESULT_OpenClaw_Onboarding=skip"
+call :color_echo "1;97m" "Bước 6/7 — Cấu hình lần đầu — combo, khởi động cùng Windows và dashboard"
 echo.
-call :configure_9router_combo
-if errorlevel 1 (set "RESULT_Combo=fail") else set "RESULT_Combo=ok"
-if errorlevel 1 set "CONFIGURE_RC=1"
-if "%CONFIGURE_RC%"=="0" (
-  call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng (deepseek-v4-flash + 3 đường dự phòng)."
-) else (
-  call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
+if defined SEL_9Router if /i not "%RESULT_9Router%"=="fail" (
+  call :configure_9router_combo
+  if errorlevel 1 (
+    set "RESULT_9Router_Combo=fail"
+    set "CONFIGURE_RC=1"
+    call :color_echo "1;33m" "  Chưa tạo được combo my-combo. Mở 9Router rồi chạy lại để thử lại; không có API key nào bị đụng tới."
+  ) else (
+    set "RESULT_9Router_Combo=ok"
+    call :color_echo "1;32m" "  Combo my-combo đã sẵn sàng (deepseek-v4-flash + 3 đường dự phòng)."
+  )
 )
+if defined SEL_9Router if /i not "%RESULT_9Router%"=="fail" (
+  call :configure_autostart_for 9Router
+  if errorlevel 1 (set "RESULT_9Router_Autostart=fail") else set "RESULT_9Router_Autostart=ok"
+  if errorlevel 1 set "CONFIGURE_RC=1"
+  call :configure_onboarding_for 9Router
+  if errorlevel 1 (set "RESULT_9Router_Onboarding=fail") else set "RESULT_9Router_Onboarding=ok"
+  if errorlevel 1 set "CONFIGURE_RC=1"
+)
+if defined SEL_OpenClaw if /i not "%RESULT_OpenClaw%"=="fail" (
+  call :configure_autostart_for OpenClaw
+  if errorlevel 1 (set "RESULT_OpenClaw_Autostart=fail") else set "RESULT_OpenClaw_Autostart=ok"
+  if errorlevel 1 set "CONFIGURE_RC=1"
+  call :configure_onboarding_for OpenClaw
+  if errorlevel 1 (set "RESULT_OpenClaw_Onboarding=fail") else set "RESULT_OpenClaw_Onboarding=ok"
+  if errorlevel 1 set "CONFIGURE_RC=1"
+)
+endlocal & exit /b %CONFIGURE_RC%
+
+:configure_autostart_for
+setlocal
+if /i "%~1"=="9Router" set "SEL_OpenClaw="
+if /i "%~1"=="OpenClaw" set "SEL_9Router="
 call :configure_autostart
-if errorlevel 1 (set "RESULT_Autostart=fail") else set "RESULT_Autostart=ok"
-if errorlevel 1 set "CONFIGURE_RC=1"
+set "ONE_CONFIG_RC=%errorlevel%"
+endlocal & exit /b %ONE_CONFIG_RC%
+
+:configure_onboarding_for
+setlocal
+if /i "%~1"=="9Router" set "SEL_OpenClaw="
+if /i "%~1"=="OpenClaw" set "SEL_9Router="
 call :configure_onboarding
-if errorlevel 1 (set "RESULT_Onboarding=fail") else set "RESULT_Onboarding=ok"
-if errorlevel 1 set "CONFIGURE_RC=1"
-exit /b %CONFIGURE_RC%
+set "ONE_CONFIG_RC=%errorlevel%"
+endlocal & exit /b %ONE_CONFIG_RC%
 
 :configure_9router_combo
 if not defined LOCALAPPDATA goto :configure_combo_fail
@@ -589,30 +877,53 @@ set "AUTOSTART_ID="
 for /f "delims=" %%g in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "AUTOSTART_ID=%%g"
 if not defined AUTOSTART_ID goto :autostart_fail
 set "AUTOSTART_RESULT=%TEMP%\aitools-autostart-%AUTOSTART_ID%.txt"
-set "AUTOSTART_9R_TARGET=powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command Start-Process -FilePath '9router.cmd' -ArgumentList @('--no-browser','--skip-update') -WindowStyle Hidden"
-set "AUTOSTART_OC_TARGET=openclaw gateway install"
+set "AUTOSTART_9R_DONE="
+set "AUTOSTART_OC_DONE="
+set "NINE_CMD_PATH="
+set "OC_CMD_PATH="
+for /f "delims=" %%p in ('where.exe 9router.cmd 2^>nul') do if not defined NINE_CMD_PATH set "NINE_CMD_PATH=%%p"
+for /f "delims=" %%p in ('where.exe openclaw.cmd 2^>nul') do if not defined OC_CMD_PATH set "OC_CMD_PATH=%%p"
+if defined SEL_9Router if not defined NINE_CMD_PATH (
+  call :color_echo "1;33m" "  Không tìm thấy 9router.cmd trong PATH; bỏ qua autostart 9Router."
+  set "SEL_9Router="
+)
+if defined SEL_OpenClaw if not defined OC_CMD_PATH (
+  call :color_echo "1;33m" "  Không tìm thấy openclaw.cmd trong PATH; bỏ qua autostart OpenClaw."
+  set "SEL_OpenClaw="
+)
+set "AUTOSTART_9R_TARGET=powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command Start-Process -FilePath '%NINE_CMD_PATH%' -ArgumentList @('--no-browser','--skip-update') -WindowStyle Hidden"
+set "AUTOSTART_OC_TARGET=%OC_CMD_PATH% gateway install"
 
-rem 9Router: chỉ ghi HKCU Run khi value chưa có hoặc khác target đã quản lý.
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
- "$ErrorActionPreference='Stop';$name='AI Tools Installer - 9Router';$target=$env:AUTOSTART_9R_TARGET;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Run');try{$old=[string]$k.GetValue($name,'',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);$changed=($old -cne $target);if($changed){$k.SetValue($name,$target,[Microsoft.Win32.RegistryValueKind]::String)};[IO.File]::WriteAllText($env:AUTOSTART_RESULT,('9router|'+$(if($changed){'registered'}else{'existing'})+'|'+$target),[Text.UTF8Encoding]::new($false))}finally{$k.Dispose()}" >nul 2>nul
-if errorlevel 1 goto :autostart_fail
-if not exist "%AUTOSTART_RESULT%" goto :autostart_fail
-for /f "usebackq tokens=1,2,* delims=|" %%a in ("%AUTOSTART_RESULT%") do set "AUTOSTART_9R_STATE=%%b"
-if /i not "%AUTOSTART_9R_STATE%"=="existing" if /i not "%AUTOSTART_9R_STATE%"=="registered" goto :autostart_fail
-call :manifest_append "Autostart:HKCU Run:AI Tools Installer - 9Router" "registered" "%AUTOSTART_9R_TARGET%"
-if errorlevel 1 goto :autostart_fail
-call :log_append "configure | ok | registered | HKCU Run 9Router (%AUTOSTART_9R_TARGET%) | %date% %time%"
+rem 9Router (chỉ khi chọn): ghi HKCU Run khi value chưa có hoặc khác target đã quản lý.
+if defined SEL_9Router (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+   "$ErrorActionPreference='Stop';$name='AI Tools Installer - 9Router';$target=$env:AUTOSTART_9R_TARGET;$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Run');try{$old=[string]$k.GetValue($name,'',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);$changed=($old -cne $target);if($changed){$k.SetValue($name,$target,[Microsoft.Win32.RegistryValueKind]::String)};[IO.File]::WriteAllText($env:AUTOSTART_RESULT,('9router|'+$(if($changed){'registered'}else{'existing'})+'|'+$target),[Text.UTF8Encoding]::new($false))}finally{$k.Dispose()}" >nul 2>nul
+  if errorlevel 1 goto :autostart_fail
+  if not exist "%AUTOSTART_RESULT%" goto :autostart_fail
+  for /f "usebackq tokens=1,2,* delims=|" %%a in ("%AUTOSTART_RESULT%") do set "AUTOSTART_9R_STATE=%%b"
+  if /i not "%AUTOSTART_9R_STATE%"=="existing" if /i not "%AUTOSTART_9R_STATE%"=="registered" goto :autostart_fail
+  call :manifest_append "Autostart:HKCU Run:AI Tools Installer - 9Router" "registered" "%AUTOSTART_9R_TARGET%"
+  if errorlevel 1 goto :autostart_fail
+  call :log_append "configure | ok | registered | HKCU Run 9Router (%AUTOSTART_9R_TARGET%) | %date% %time%"
+  set "AUTOSTART_9R_DONE=1"
+)
 
-rem OpenClaw: dùng cơ chế cài gateway chính thức; lệnh được chạy ẩn và
-rem bản thân OpenClaw đảm bảo việc đăng ký lặp lại là idempotent.
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
- "$ErrorActionPreference='Stop';$p=Start-Process -FilePath 'openclaw.cmd' -ArgumentList @('gateway','install') -WindowStyle Hidden -Wait -PassThru;if($p.ExitCode -ne 0){exit $p.ExitCode};[IO.File]::AppendAllText($env:AUTOSTART_RESULT,([Environment]::NewLine+'openclaw|installed|openclaw gateway install'),[Text.UTF8Encoding]::new($false))" >nul 2>nul
-if errorlevel 1 goto :autostart_fail
-call :manifest_append "Autostart:OpenClaw gateway" "registered" "%AUTOSTART_OC_TARGET%"
-if errorlevel 1 goto :autostart_fail
-call :log_append "configure | ok | registered | OpenClaw gateway (%AUTOSTART_OC_TARGET%) | %date% %time%"
+rem OpenClaw (chỉ khi chọn): dùng cơ chế cài gateway chính thức; lệnh được chạy
+rem ẩn và bản thân OpenClaw đảm bảo việc đăng ký lặp lại là idempotent.
+if defined SEL_OpenClaw (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+   "$ErrorActionPreference='Stop';$p=Start-Process -FilePath 'openclaw.cmd' -ArgumentList @('gateway','install') -WindowStyle Hidden -Wait -PassThru;if($p.ExitCode -ne 0){exit $p.ExitCode};[IO.File]::AppendAllText($env:AUTOSTART_RESULT,([Environment]::NewLine+'openclaw|installed|openclaw gateway install'),[Text.UTF8Encoding]::new($false))" >nul 2>nul
+  if errorlevel 1 goto :autostart_fail
+  call :manifest_append "Autostart:OpenClaw gateway" "registered" "%AUTOSTART_OC_TARGET%"
+  if errorlevel 1 goto :autostart_fail
+  call :log_append "configure | ok | registered | OpenClaw gateway (%AUTOSTART_OC_TARGET%) | %date% %time%"
+  set "AUTOSTART_OC_DONE=1"
+)
+
 if exist "%AUTOSTART_RESULT%" del /f /q "%AUTOSTART_RESULT%" >nul 2>nul
-call :color_echo "1;32m" "  Đã đăng ký 9Router và OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
+if defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router và OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
+if defined AUTOSTART_9R_DONE if not defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký 9Router tự khởi động cùng Windows (không hiện cửa sổ console)."
+if not defined AUTOSTART_9R_DONE if defined AUTOSTART_OC_DONE call :color_echo "1;32m" "  Đã đăng ký OpenClaw tự khởi động cùng Windows (không hiện cửa sổ console)."
 exit /b 0
 
 :autostart_fail
@@ -622,46 +933,91 @@ call :color_echo "1;33m" "  Chưa đăng ký được tự khởi động. Chạ
 exit /b 1
 
 :configure_onboarding
-call :color_echo "1;97m" "  Mở dashboard 9Router và giao diện OpenClaw..."
-call :color_echo "2;90m" "  Trong 9Router, tự nhập API key của bạn trong dashboard. Công cụ không đọc hoặc lưu key."
-call :color_echo "2;90m" "  Hoàn tất kết nối đầu tiên và onboarding OpenClaw ngay trên hai giao diện vừa mở."
-start "" "http://localhost:20128"
-if errorlevel 1 goto :onboarding_fail
-start "" "http://127.0.0.1:18789"
-if errorlevel 1 goto :onboarding_fail
-call :log_append "configure | ok | - | dashboards localhost:20128, 127.0.0.1:18789 | %date% %time%"
+set "OB_RC=0"
+if defined SEL_9Router call :color_echo "1;97m" "  Mở dashboard 9Router..."
+if defined SEL_OpenClaw call :color_echo "1;97m" "  Mở giao diện OpenClaw..."
+if defined SEL_9Router call :color_echo "2;90m" "  Trong 9Router, tự nhập API key của bạn trong dashboard. Công cụ không đọc hoặc lưu key."
+call :color_echo "2;90m" "  Hoàn tất kết nối đầu tiên và onboarding ngay trên giao diện vừa mở."
+if defined SEL_9Router (
+  start "" "http://localhost:20128"
+  if errorlevel 1 set "OB_RC=1"
+)
+if defined SEL_OpenClaw (
+  start "" "http://127.0.0.1:18789"
+  if errorlevel 1 set "OB_RC=1"
+)
+if not "%OB_RC%"=="0" goto :onboarding_fail
+call :log_append "configure | ok | - | dashboards | %date% %time%"
 exit /b 0
 
 rem ----------------------------- report -----------------------------
 rem Báo cáo cuối luôn chạy sau configure. Log cũ được giữ nguyên.
 :report_block
 setlocal EnableDelayedExpansion
-set "REPORT_TOTAL=10"
+set "REPORT_TOTAL=0"
 set "REPORT_OK=0"
+set "REPORT_KEEP=0"
 set "REPORT_FAIL=0"
 set "REPORT_ERRORS="
-for %%I in (Node Git Python VSCode VSCodeExt OpenClaw 9Router Combo Autostart Onboarding) do (
-  if /i "!RESULT_%%I!"=="fail" (
-    set /a REPORT_FAIL+=1
-    if defined REPORT_ERRORS (set "REPORT_ERRORS=!REPORT_ERRORS!, %%I") else set "REPORT_ERRORS=%%I"
+if /i "!RESULT_9Router_Combo!"=="fail" set "RESULT_9Router=fail"
+if /i "!RESULT_9Router_Autostart!"=="fail" set "RESULT_9Router=fail"
+if /i "!RESULT_9Router_Onboarding!"=="fail" set "RESULT_9Router=fail"
+if /i "!RESULT_OpenClaw_Autostart!"=="fail" set "RESULT_OpenClaw=fail"
+if /i "!RESULT_OpenClaw_Onboarding!"=="fail" set "RESULT_OpenClaw=fail"
+for %%I in (Node Git Python VSCode VSCodeExt OpenClaw 9Router) do (
+  if /i "!RESULT_%%I!"=="skip" (
+    rem không chọn / không áp dụng — không đếm
   ) else (
-    set /a REPORT_OK+=1
+    set /a REPORT_TOTAL+=1
+    if /i "!RESULT_%%I!"=="ok" (
+      set /a REPORT_OK+=1
+    ) else if /i "!RESULT_%%I!"=="keep" (
+      set /a REPORT_KEEP+=1
+    ) else (
+      set /a REPORT_FAIL+=1
+      if defined REPORT_ERRORS (set "REPORT_ERRORS=!REPORT_ERRORS!, %%I") else set "REPORT_ERRORS=%%I"
+    )
   )
 )
 if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
 set "REPORT_LOG=%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log"
+set "REPORT_MANIFEST=%LOCALAPPDATA%\AITools\manifest.txt"
+call :color_echo "1;36m" "HOÀN TẤT"
+call :color_echo "2;90m" "────────────────────────────────────────────────────────────────────"
+call :report_item "Node.js" "!RESULT_Node!"
+call :report_item "Git" "!RESULT_Git!"
+call :report_item "Python" "!RESULT_Python!"
+call :report_item "Visual Studio Code" "!RESULT_VSCode!"
+call :report_item "Claude Code extension" "!RESULT_VSCodeExt!"
+call :report_item "OpenClaw" "!RESULT_OpenClaw!"
+call :report_item "9Router" "!RESULT_9Router!"
+echo.
 if "!REPORT_FAIL!"=="0" (
   set "REPORT_STATUS=ok"
-  call :color_echo "1;32m" "Bước 6/6 — Hoàn tất: !REPORT_OK!/!REPORT_TOTAL! mục thành công."
+  call :color_echo "1;32m" "Kết quả: !REPORT_OK! thành công · !REPORT_KEEP! giữ nguyên · 0 lỗi"
 ) else (
   set "REPORT_STATUS=fail"
-  call :color_echo "1;33m" "Bước 6/6 — Hoàn tất: !REPORT_OK!/!REPORT_TOTAL! mục thành công, !REPORT_FAIL! mục lỗi."
+  call :color_echo "1;33m" "Kết quả: !REPORT_OK! thành công · !REPORT_KEEP! giữ nguyên · !REPORT_FAIL! lỗi"
   call :color_echo "1;31m" "  Mục lỗi: !REPORT_ERRORS!"
   call :color_echo "2;90m" "  Vui lòng chạy lại công cụ để thử lại các mục lỗi."
 )
-call :color_echo "2;90m" "  Nhật ký được lưu tại: !REPORT_LOG!"
+call :color_echo "2;90m" "  PATH được giữ hoặc cập nhật theo kết quả cài đặt ở trên."
+call :color_echo "2;90m" "  Log: !REPORT_LOG!"
+call :color_echo "2;90m" "  Manifest: !REPORT_MANIFEST!"
 call :log_append "report | !REPORT_STATUS! | !REPORT_OK!/!REPORT_TOTAL! | !REPORT_LOG! | %date% %time%"
-endlocal & exit /b 0
+call :color_echo "1;33m" "Nhấn R để xem lại từ đầu"
+:report_wait_review
+call :read_raw_key
+if errorlevel 1 endlocal & exit /b 1
+if /i not "!RAW_KEY!"=="r" goto :report_wait_review
+endlocal & exit /b 2
+
+:report_item
+if /i "%~2"=="skip" exit /b 0
+if /i "%~2"=="keep" (call :color_echo "2;90m" "  — %~1 — đã có, giữ nguyên" & exit /b 0)
+if /i "%~2"=="ok" (call :color_echo "1;32m" "  ✓ %~1 — đã hoàn tất và xác minh" & exit /b 0)
+call :color_echo "1;31m" "  X %~1 — lỗi hoặc không xác định được kết quả"
+exit /b 0
 
 :onboarding_fail
 call :log_append "configure | fail | - | dashboards | %date% %time%"
@@ -967,11 +1323,11 @@ if "%VSCODE_ROLLBACK_RC%"=="0" if exist "%VSCODE_BACKUP%\" set "VSCODE_CLEANUP_R
 exit /b %VSCODE_CLEANUP_RC%
 
 :install_vscodeext
+set "VSCODE_EXT_OLD_PATH=%PATH%"
 if not defined LOCALAPPDATA goto :ivse_missing
 set "VSCODE_DIR=%LOCALAPPDATA%\Programs\Microsoft VS Code"
 set "VSCODE_CODE=%LOCALAPPDATA%\Programs\Microsoft VS Code\bin\code.cmd"
 if not exist "%VSCODE_CODE%" goto :ivse_missing
-set "VSCODE_EXT_OLD_PATH=%PATH%"
 set "PATH=%VSCODE_DIR%\bin;%PATH%"
 "%VSCODE_CODE%" --install-extension anthropic.claude-code --force >nul 2>nul
 if errorlevel 1 goto :ivse_fail
@@ -1049,7 +1405,7 @@ call :path_append "%%LOCALAPPDATA%%\Programs\Python\Python313\Scripts"
 if errorlevel 1 goto :ipy_path_fail
 call :python_path_prioritize
 if errorlevel 1 goto :ipy_path_fail
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$expected=(Get-Item -LiteralPath $env:PY_EXE -ErrorAction Stop).FullName;$v=(& $expected --version 2^>^&1|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1};$cmd=(Get-Command python -CommandType Application -ErrorAction Stop).Source;if((Get-Item -LiteralPath $cmd).FullName -ine $expected){exit 1};$v=(& python --version 2^>^&1|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1}" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$expected=(Get-Item -LiteralPath $env:PY_EXE -ErrorAction Stop).FullName;$v=(& $expected --version|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1};$cmd=(Get-Command python -CommandType Application -ErrorAction Stop|Select-Object -First 1).Source;if((Get-Item -LiteralPath $cmd).FullName -ine $expected){exit 1};$v=(& python --version|Out-String).Trim();if($LASTEXITCODE -ne 0 -or $v -notmatch ('^Python\s+'+[regex]::Escape($env:PY_VER)+'$')){exit 1}" >nul 2>nul
 if errorlevel 1 goto :ipy_verify_fail
 for /f "delims=" %%w in ('where.exe python 2^>nul') do if not defined PY_WHERE_FIRST set "PY_WHERE_FIRST=%%w"
 if not defined PY_WHERE_FIRST goto :ipy_verify_fail
@@ -1180,7 +1536,7 @@ for /l %%r in (1,1,3) do (
   call :download_with_progress "%GIT_URL%" "%GIT_ZIP%" "Git %GIT_VER%"
   if not errorlevel 1 (
     call :color_echo "1;36m" "  Đang giải nén và xác minh Git..."
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';if(Test-Path -LiteralPath $env:GIT_STAGE){Remove-Item -LiteralPath $env:GIT_STAGE -Recurse -Force};New-Item -ItemType Directory -Path $env:GIT_STAGE|Out-Null;Expand-Archive -LiteralPath $env:GIT_ZIP -DestinationPath $env:GIT_STAGE -Force;$exe=Join-Path $env:GIT_STAGE 'cmd\git.exe';if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){throw 'missing'};$out=& $exe --version 2^>^&1;if($LASTEXITCODE -ne 0 -or $out -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){throw 'version'}" >nul 2>nul
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';if(Test-Path -LiteralPath $env:GIT_STAGE){Remove-Item -LiteralPath $env:GIT_STAGE -Recurse -Force};New-Item -ItemType Directory -Path $env:GIT_STAGE|Out-Null;Expand-Archive -LiteralPath $env:GIT_ZIP -DestinationPath $env:GIT_STAGE -Force;$exe=Join-Path $env:GIT_STAGE 'cmd\git.exe';if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){throw 'missing'};$out=& $exe --version;if($LASTEXITCODE -ne 0 -or $out -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){throw 'version'}" >nul 2>nul
     if not errorlevel 1 goto :igit_package_ready
   )
   if exist "%GIT_ZIP%" del /f /q "%GIT_ZIP%" >nul 2>nul
@@ -1209,7 +1565,7 @@ if errorlevel 1 goto :igit_replace_fail
 call :path_append "%%LOCALAPPDATA%%\Programs\Git\cmd"
 if errorlevel 1 goto :igit_path_fail
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$expected=(Get-Item -LiteralPath (Join-Path $env:GIT_DIR 'cmd\git.exe') -ErrorAction Stop).FullName;$direct=& $expected --version 2^>^&1;if($LASTEXITCODE -ne 0 -or $direct -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){exit 1};$cmd=(Get-Command git -CommandType Application -ErrorAction Stop).Source;if((Get-Item -LiteralPath $cmd).FullName -ine $expected){exit 1};$session=& git --version 2^>^&1;if($LASTEXITCODE -ne 0 -or $session -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){exit 1}" >nul 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$expected=(Get-Item -LiteralPath (Join-Path $env:GIT_DIR 'cmd\git.exe') -ErrorAction Stop).FullName;$direct=& $expected --version;if($LASTEXITCODE -ne 0 -or $direct -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){exit 1};$cmd=(Get-Command git -CommandType Application -ErrorAction Stop|Select-Object -First 1).Source;if((Get-Item -LiteralPath $cmd).FullName -ine $expected){exit 1};$session=& git --version;if($LASTEXITCODE -ne 0 -or $session -notmatch ('^git version '+[regex]::Escape($env:GIT_VER)+'(?:\s|$)')){exit 1}" >nul 2>nul
 if errorlevel 1 goto :igit_verify_fail
 
 call :manifest_append "Git" "%GIT_VER%" "%GIT_DIR%"
@@ -1322,6 +1678,24 @@ rem --- Tải ZIP với phần trăm byte thật và retry 3 lần ---
 call :download_with_progress "%NODE_URL%" "%NODE_ZIP%" "Node.js %NODE_VER%"
 if errorlevel 1 goto :inode_download_fail
 
+rem --- Xác minh hash SHA-256 ---
+call :color_echo "1;36m" "  Đang xác minh tính toàn vẹn..."
+set "NODE_SHASUM_URL=https://nodejs.org/dist/v%NODE_VER%/SHASUMS256.txt"
+set "NODE_SHASUM=%TEMP%\node-v%NODE_VER%-SHASUMS256.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;Invoke-RestMethod -Uri '%NODE_SHASUM_URL%' -OutFile '%NODE_SHASUM%' -TimeoutSec 15 -Headers @{'User-Agent'='AI-Tools-Installer'}" >nul 2>nul
+if errorlevel 1 (
+  call :color_echo "1;33m" "  Không tải được SHASUMS256.txt; bỏ qua xác minh hash."
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$zip='%NODE_ZIP%';$sums='%NODE_SHASUM%';$expected=(Get-Content -LiteralPath $sums)|?{$_ -match 'node-v%NODE_VER%-win-x64\.zip'}|Select-Object -First 1;if($null -eq $expected){throw 'no-hash-entry'};$hash=($expected -split '\s+')[0];$actual=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash;if($actual -ne $hash){throw 'hash-mismatch'}" >nul 2>nul
+  if errorlevel 1 (
+    call :color_echo "1;31m" "  Hash SHA-256 không khớp; file tải về có thể bị hỏng."
+    del /f /q "%NODE_ZIP%" >nul 2>nul
+    goto :inode_download_fail
+  )
+  call :color_echo "1;32m" "  Đã xác minh hash SHA-256."
+)
+if exist "%NODE_SHASUM%" del /f /q "%NODE_SHASUM%" >nul 2>nul
+
 echo.
 call :color_echo "1;97m" "  Đã tải xong. Đang giải nén vào %LOCALAPPDATA%\node ..."
 
@@ -1357,7 +1731,7 @@ exit /b 0
 call :color_echo "1;31m" "  Không xác định được phiên bản Node.js để cài. Bỏ qua."
 call :color_echo "2;90m" "  Kiểm tra kết nối mạng rồi chạy lại. Không có gì trên máy bị thay đổi."
 call :log_append "install | skip | unknown-version | - | %date% %time%"
-exit /b 0
+exit /b 1
 
 :inode_download_fail
 if exist "%NODE_BACKUP%" move /y "%NODE_BACKUP%" "%NODE_DIR%" >nul 2>nul
@@ -1517,7 +1891,7 @@ if not defined UPDATE_URL (
 )
 del /f /q "!UPDATE_TMP!" "!UPDATE_NEW!" >nul 2>nul
 call :download_with_progress "%UPDATE_URL%" "%UPDATE_TMP%" "Bản cập nhật %UPDATE_VERSION%"
-if not errorlevel 1 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$o=$env:UPDATE_TMP;if((Get-Item -LiteralPath $o).Length -lt 128){throw 'empty'};$s=[IO.File]::ReadAllText($o);if($s -notmatch '(?m)^@echo off'){throw 'not-batch'};if($s -notmatch 'TOOL_VERSION='){throw 'missing-version'};Move-Item -LiteralPath $o -Destination $env:UPDATE_NEW -Force" >nul 2>nul
+if not errorlevel 1 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';$o=$env:UPDATE_TMP;$len=(Get-Item -LiteralPath $o).Length;if($len -lt 128){throw 'empty'};if($len -gt 5MB){throw 'too-large'};$s=[IO.File]::ReadAllText($o);if($s -notmatch '(?m)^@echo off'){throw 'not-batch'};if($s -notmatch 'TOOL_VERSION='){throw 'missing-version'};if($s -notmatch 'TOOL_VERSION=\d+\.\d+\.\d+'){throw 'invalid-version-format'};if($s -notmatch 'AI Tools Installer'){throw 'missing-name'};Move-Item -LiteralPath $o -Destination $env:UPDATE_NEW -Force" >nul 2>nul
 if errorlevel 1 (
   call :color_echo "1;31m" "Tải bản cập nhật thất bại; bản hiện tại không bị thay đổi."
   call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| download-or-verify ^| %date% %time%"
@@ -1528,7 +1902,6 @@ if not exist "!UPDATE_NEW!" (
   call :log_append "update-replace ^| fail ^| !TOOL_VERSION! ^| missing-temp ^| %date% %time%"
   endlocal & exit /b 1
 )
-set "UPDATE_TARGET=!UPDATE_TARGET!"
 set "UPDATE_NEW=!UPDATE_NEW!"
 set "UPDATE_OLD=!UPDATE_OLD!"
 set "UPDATE_LOG=%LOCALAPPDATA%\AITools\logs\ai-tools-installer.log"
@@ -1545,5 +1918,6 @@ call :log_append "router | fail | - | - | %date% %time%"
 exit /b 0
 
 :installer_exit
+if defined LOCALAPPDATA (if exist "%LOCALAPPDATA%\AITools\.install-lock" del /f /q "%LOCALAPPDATA%\AITools\.install-lock" >nul 2>nul) else (if exist "%TEMP%\aitools-install-lock" del /f /q "%TEMP%\aitools-install-lock" >nul 2>nul)
 endlocal
 exit /b 0
