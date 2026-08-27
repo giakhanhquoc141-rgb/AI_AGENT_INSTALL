@@ -5,6 +5,7 @@ updated: 2026-08-27
 sources:
   - npx bmad-method install official flow
   - AI_Tools_Installer.bat current behavior
+  - project-context.md
 ---
 
 # AI Tools Installer — Experience Spine
@@ -12,6 +13,8 @@ sources:
 ## Foundation
 
 Prototype của tool thuần CMD trên Windows, tiếng Việt. HTML chỉ mô phỏng terminal và không thực thi cài đặt thật.
+
+Prototype `.working/installer-wizard-preview.html` là mẫu tham chiếu bắt buộc cho implementation. Mọi yêu cầu thêm, bớt hoặc đổi tính năng có thể ảnh hưởng giao diện phải được hỏi lại người dùng xem có cần cập nhật mẫu này hay không trước khi thay đổi prototype.
 
 ## Information Architecture
 

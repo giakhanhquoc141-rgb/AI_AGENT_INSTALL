@@ -61,3 +61,4 @@ Dòng lựa chọn `[✓]`, con trỏ `>` với nền tô sáng, phím ↑/↓�
 | Giải thích tool sẽ làm gì trước khi thực hiện | Ẩn dependency tự động |
 | Cho quay lại sửa lựa chọn | Bắt đầu tải ngay khi chọn |
 | Phân biệt cài mới, cập nhật, giữ nguyên | Chỉ hiển thị một thanh tiến trình chung chung |
+| Hỏi người dùng trước khi đổi mẫu do tính năng thay đổi | Tự ý để implementation và prototype lệch nhau |
