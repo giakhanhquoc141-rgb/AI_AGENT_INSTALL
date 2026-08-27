@@ -52,7 +52,7 @@ Bo góc vừa phải, không dùng pill cho các khối nội dung lớn.
 
 ## Components
 
-Dòng lựa chọn `[✓]`, phím 1–7/T/K/X, bảng monospace, xác nhận C/H, thanh tiến trình ASCII và báo cáo cuối.
+Dòng lựa chọn `[✓]`, con trỏ `>` với nền tô sáng, phím ↑/↓–Space–Enter, bảng monospace, xác nhận C/H, thanh tiến trình ASCII và báo cáo cuối.
 
 ## Do's and Don'ts
 

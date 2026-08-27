@@ -18,7 +18,7 @@ Prototype của tool thuần CMD trên Windows, tiếng Việt. HTML chỉ mô p
 | Bề mặt | Mục đích |
 |---|---|
 | Chào mừng | Hiện logo, phiên bản, kiểm tra cập nhật và ENTER để bắt đầu |
-| Thành phần | Phím 1–7 bật/tắt; T chọn tất cả; K bỏ tất cả; X tiếp tục |
+| Thành phần | Mũi tên lên/xuống di chuyển; Space bật/tắt; Enter xác nhận |
 | Kiểm tra máy | Nhận diện phiên bản hiện tại và phiên bản đề xuất |
 | Xem lại | Phân loại cài mới/cập nhật/giữ nguyên, xác nhận rõ ràng |
 | Tiến trình | Theo dõi từng thành phần, tải xuống, cài và xác minh |
@@ -33,7 +33,7 @@ Ngắn, bình tĩnh, nói rõ hậu quả. Ví dụ: “Node.js được chọn 
 | Thành phần | Quy tắc |
 |---|---|
 | Prompt CMD | Chỉ nhận các phím được liệt kê ngay trên màn hình |
-| Tool row | Hiển thị `[✓]`/`[ ]`, số thứ tự, dependency tự chọn và giải thích |
+| Tool row | Hiển thị `[✓]`/`[ ]`; dòng hiện tại có con trỏ `>` và nền tương phản |
 | Plan row | Luôn có hành động, phiên bản hiện tại, phiên bản đích |
 | Progress row | Trạng thái chờ/đang làm/xong/lỗi; lỗi có nút thử lại |
 | Confirmation | Nút chính chỉ bật khi kế hoạch hợp lệ |
@@ -44,7 +44,7 @@ Cold start, đang quét, offline nhưng tiếp tục được, dependency tự c
 
 ## Interaction Primitives
 
-Bàn phím là tương tác chính: số 1–7, T/K/X, C/H, ENTER và R. Nhấp chuột trong HTML chỉ là tiện ích xem trước, không thuộc đặc tả tool thật.
+Bàn phím là tương tác chính: mũi tên lên/xuống để di chuyển, Space để bật/tắt, Enter để xác nhận; C/H và R cho các bước sau. Nhấp chuột trong HTML chỉ là tiện ích xem trước.
 
 ## Accessibility Floor
 
