@@ -20,7 +20,7 @@ Prototype của tool thuần CMD trên Windows, tiếng Việt. HTML chỉ mô p
 | Chào mừng | Hiện logo, phiên bản, kiểm tra cập nhật và ENTER để bắt đầu |
 | Thành phần | Mũi tên lên/xuống di chuyển; Space bật/tắt; Enter xác nhận |
 | Kiểm tra máy | Nhận diện phiên bản hiện tại và phiên bản đề xuất |
-| Xem lại | Phân loại cài mới/cập nhật/giữ nguyên, xác nhận rõ ràng |
+| Xem lại | Phân loại cài mới/cập nhật/giữ nguyên; Enter để bắt đầu |
 | Tiến trình | Theo dõi từng thành phần, tải xuống, cài và xác minh |
 | Hoàn tất | Báo kết quả, vị trí log/manifest và bước tiếp theo |
 
@@ -44,7 +44,7 @@ Cold start, đang quét, offline nhưng tiếp tục được, dependency tự c
 
 ## Interaction Primitives
 
-Bàn phím là tương tác chính: mũi tên lên/xuống để di chuyển, Space để bật/tắt, Enter để xác nhận; C/H và R cho các bước sau. Nhấp chuột trong HTML chỉ là tiện ích xem trước.
+Bàn phím là tương tác chính: mũi tên lên/xuống để di chuyển, Space để bật/tắt, Enter để xác nhận và bắt đầu cài đặt; R xem lại. Hủy bằng cách đóng tool trước khi bắt đầu.
 
 ## Accessibility Floor
 
