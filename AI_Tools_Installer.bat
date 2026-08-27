@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  AI Tools Installer - Phien ban 0.4.4
+rem  AI Tools Installer - Phien ban 0.4.5
 rem  Cau truc mot file, tu bao gom: [init] -> [helpers] -> [router]
 rem  Dinh dang file: UTF-8 (khong BOM), xuat dong CRLF, chcp 65001
 rem ============================================================
@@ -10,7 +10,7 @@ chcp 65001 >nul
 
 rem --------------------------- [init] ---------------------------
 set "TOOL_NAME=AI Tools Installer"
-set "TOOL_VERSION=0.4.4"
+set "TOOL_VERSION=0.4.5"
 set "TOOL_SLOGAN=Cài bộ AI · Tự kiểm tra · Gỡ sạch"
 set "TOOL_INTRO=Công cụ giúp bạn cài bộ AI vào máy trong một lần chạy — không cần kiến thức kỹ thuật."
 
@@ -261,6 +261,7 @@ set "AITEST_MODE=1"
 set "AITEST_KEYS=%~2"
 if not defined AITEST_KEYS exit /b 64
 call :tool_select_block
+if defined UNINSTALL_REQUEST goto :uninstall_from_menu
 if not defined SEL_COUNT exit /b 65
 echo CURSOR=%TOOL_CURSOR%;COUNT=%SEL_COUNT%;Git=%SEL_Git%;Node=%SEL_Node%;Python=%SEL_Python%;VSCode=%SEL_VSCode%;VSCodeExt=%SEL_VSCodeExt%;OpenClaw=%SEL_OpenClaw%;9Router=%SEL_9Router%
 exit /b 0
@@ -282,6 +283,7 @@ call :run_step "welcome" ":welcome_block"
 if errorlevel 1 set "PIPELINE_RC=1"
 if not "%PIPELINE_RC%"=="0" goto :run_install_end
 call :tool_select_block
+if defined UNINSTALL_REQUEST goto :uninstall_from_menu
 if errorlevel 1 (set "PIPELINE_RC=1" & goto :run_install_end)
 call :scan_block
 if errorlevel 1 (set "PIPELINE_RC=1" & set "PLAN_ABORT=1")
@@ -337,7 +339,7 @@ exit /b 0
 
 rem --------------------- tool selection ---------------------
 rem Chọn công cụ cần quét/cài (kiểu bmad-method module picker).
-rem Mặc định chọn cả 7; bấm số để bật/tắt, T/K/X để kết thúc.
+rem Mặc định chọn cả 7; ↑/↓-SPACE-ENTER để duyệt; dòng Gỡ sạch chạy uninstall.
 :tool_select_block
 setlocal EnableDelayedExpansion
 set "SEL_Git=1"
@@ -364,15 +366,16 @@ call :tool_select_row 4 SEL_VSCode "Visual Studio Code"
 call :tool_select_row 5 SEL_VSCodeExt "Claude Code extension"
 call :tool_select_row 6 SEL_OpenClaw "OpenClaw"
 call :tool_select_row 7 SEL_9Router "9Router"
+call :tool_select_action_row
 echo.
 if defined DEPENDENCY_NOTE call :color_echo "1;33m" "!DEPENDENCY_NOTE!"
 call :color_echo "1;97m" "Dùng phím mũi tên để chọn:"
 call :read_raw_key
 if errorlevel 1 endlocal & exit /b 1
-if /i "!RAW_KEY!"=="UpArrow" (set /a TOOL_CURSOR-=1 & if !TOOL_CURSOR! LSS 1 set "TOOL_CURSOR=7" & goto :tool_select_redraw)
-if /i "!RAW_KEY!"=="DownArrow" (set /a TOOL_CURSOR+=1 & if !TOOL_CURSOR! GTR 7 set "TOOL_CURSOR=1" & goto :tool_select_redraw)
+if /i "!RAW_KEY!"=="UpArrow" (set /a TOOL_CURSOR-=1 & if !TOOL_CURSOR! LSS 1 set "TOOL_CURSOR=8" & goto :tool_select_redraw)
+if /i "!RAW_KEY!"=="DownArrow" (set /a TOOL_CURSOR+=1 & if !TOOL_CURSOR! GTR 8 set "TOOL_CURSOR=1" & goto :tool_select_redraw)
 if /i "!RAW_KEY!"=="Spacebar" goto :tool_select_toggle
-if /i "!RAW_KEY!"=="Enter" goto :tool_select_done
+if /i "!RAW_KEY!"=="Enter" goto :tool_select_enter
 goto :tool_select_redraw
 
 :tool_select_toggle
@@ -417,6 +420,25 @@ if "%SEL_COUNT%"=="0" (
 call :log_append "select | ok | %SEL_COUNT% mục | - | %date% %time%"
 endlocal & set "SEL_Git=%SEL_Git%" & set "SEL_Node=%SEL_Node%" & set "SEL_Python=%SEL_Python%" & set "SEL_VSCode=%SEL_VSCode%" & set "SEL_VSCodeExt=%SEL_VSCodeExt%" & set "SEL_OpenClaw=%SEL_OpenClaw%" & set "SEL_9Router=%SEL_9Router%" & set "SEL_COUNT=%SEL_COUNT%" & set "TOOL_CURSOR=%TOOL_CURSOR%" & exit /b 0
 
+:tool_select_action_row
+if "%TOOL_CURSOR%"=="8" if defined VT_OK (echo %ESC%[7m  [→] Gỡ sạch tất cả%ESC%[0m) else (echo ^> [→] Gỡ sạch tất cả)
+if not "%TOOL_CURSOR%"=="8" echo   [→] Gỡ sạch tất cả
+exit /b
+
+:tool_select_enter
+if "!TOOL_CURSOR!"=="8" goto :tool_select_uninstall
+goto :tool_select_done
+
+:tool_select_uninstall
+call :color_echo "1;33m" "Gỡ sạch sẽ xoá mọi thứ mà AI Tools đã cài và đăng ký trên máy này."
+call :color_echo "1;97m" "Bạn chắc chắn muốn gỡ sạch không? [Y/N]"
+call :read_raw_key
+if errorlevel 1 goto :tool_select_redraw
+if /i "!RAW_KEY!"=="N" goto :tool_select_redraw
+if /i not "!RAW_KEY!"=="Y" goto :tool_select_uninstall
+call :log_append "uninstall | begin | selected-from-menu | - | %date% %time%"
+endlocal & set "UNINSTALL_REQUEST=1" & exit /b 0
+
 :welcome_block
 call :color_echo "38;5;214m" "           █████╗   ██╗ ████████╗ ██████╗  ██████╗  ██╗      ██████╗"
 call :color_echo "38;5;214m" "           ██╔══██╗ ██║ ╚══██╔══╝ ██╔══██╗ ██╔══██╗ ██║      ██╔═══╝"
@@ -446,6 +468,7 @@ echo   1. Cho bạn chọn công cụ
 echo   2. Quét phiên bản đã có và phiên bản mới nhất
 echo   3. Hiển thị kế hoạch trước khi thay đổi máy
 echo   4. Cài, xác minh và báo cáo từng mục
+echo   5. Gỡ sạch tất cả nếu cần, từ màn hình chọn công cụ
 echo.
 call :color_echo "1;33m" "Nhấn ENTER để bắt đầu"
 call :press_enter
@@ -1875,6 +1898,12 @@ call :log_append "install | fail | %VL_Node% | manifest-failed | %date% %time%"
 exit /b 1
 
 rem --------------------------- uninstall ---------------------------
+:uninstall_from_menu
+call :uninstall_manifest
+set "UNINSTALL_RC=%errorlevel%"
+call :log_append "uninstall | exit | %UNINSTALL_RC% | menu | %date% %time%"
+goto :installer_exit
+
 :uninstall_manifest
 call :manifest_validate
 if errorlevel 1 (
