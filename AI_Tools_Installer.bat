@@ -496,14 +496,16 @@ if defined SCAN_MISSING (
 )
 
 echo.
-call :color_echo "1;97m" "Kết quả quét:"
-call :show_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!" 1 SEL_Git
-call :show_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!" 1 SEL_Node
-call :show_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!" 1 SEL_Python
-call :show_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!" 1 SEL_VSCode
-call :show_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!" 0 SEL_VSCodeExt
-call :show_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!" 1 SEL_OpenClaw
-call :show_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!" 1 SEL_9Router
+call :color_echo "1;36m" "KẾT QUẢ QUÉT"
+call :color_echo "2;90m" "────────────────────────────────────────────────────────────────────"
+call :color_echo "2;90m" "  Công cụ                 Hiện tại       Mới nhất      Quyết định"
+call :scan_table_row "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
+call :scan_table_row "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
+call :scan_table_row "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
+call :scan_table_row "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
+call :scan_table_row "Claude Code extension" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
+call :scan_table_row "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
+call :scan_table_row "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
 
 set "SCAN_LOG_VER=git=!VR_Git!;node=!VR_Node!;python=!VR_Python!;vscode=!VR_VSCode!;claude-code=!VR_VSCodeExt!;openclaw=!VR_OpenClaw!;9router=!VR_9Router!"
 set "SCAN_RC=0"
@@ -564,6 +566,81 @@ if /i "!ST!"=="INSTALL" (
 endlocal
 exit /b 0
 
+:scan_table_row
+rem %1=Tên, %2=Hiện tại, %3=Mới nhất, %4=Quyết định
+rem Cột: Tên=26chars, Hiện tại=16chars, Mới nhất=16chars, Quyết định=16chars
+setlocal EnableDelayedExpansion
+set "T_NAME=%~1"
+set "T_CUR=%~2"
+set "T_LAT=%~3"
+set "T_DEC=%~4"
+if "!T_CUR!"=="-" set "T_CUR=—"
+if "!T_LAT!"=="-" set "T_LAT=—"
+if /i "!T_DEC!"=="INSTALL" (
+  set "T_ACT=CÀI MỚI"
+  set "T_COL=1;32m"
+) else if /i "!T_DEC!"=="UPDATE" (
+  set "T_ACT=CẬP NHẬT"
+  set "T_COL=1;33m"
+) else (
+  set "T_ACT=GIỮ NGUYÊN"
+  set "T_COL=2;90m"
+)
+call :pad_right "T_NAME" 26
+call :pad_right "T_CUR" 16
+call :pad_right "T_LAT" 16
+call :color_echo "2;90m" "  !T_NAME!!T_CUR!!T_LAT!"
+call :color_echo "!T_COL!" "                                         !T_ACT!"
+endlocal
+exit /b 0
+
+:plan_table_row
+rem %1=Tên, %2=Quyết định, %3=Hiện tại, %4=Mới nhất
+rem Cột: Tên=26chars, Hiện tại=16chars, Đích=16chars, Thao tác=16chars
+setlocal EnableDelayedExpansion
+set "P_NAME=%~1"
+set "P_ST=%~2"
+set "P_VR=%~3"
+set "P_VL=%~4"
+if "!P_VR!"=="-" set "P_VR=Chưa có"
+if "!P_VL!"=="-" set "P_VL=latest"
+if /i "!P_ST!"=="INSTALL" (
+  set "P_ACT=CÀI MỚI"
+  set "P_COL=1;32m"
+) else if /i "!P_ST!"=="UPDATE" (
+  set "P_ACT=CẬP NHẬT"
+  set "P_COL=1;33m"
+) else (
+  set "P_ACT=BỎ QUA"
+  set "P_COL=2;90m"
+)
+call :pad_right "P_NAME" 26
+call :pad_right "P_VR" 16
+call :pad_right "P_VL" 16
+call :color_echo "2;90m" "  !P_NAME!!P_VR!!P_VL!"
+call :color_echo "!P_COL!" "                                         !P_ACT!"
+endlocal
+exit /b 0
+
+:pad_right
+rem %1=variable name, %2=target width
+setlocal EnableDelayedExpansion
+set "PAD_VAL=!%~1!"
+set "PAD_LEN=0"
+:pad_right_loop
+if defined PAD_VAL if not "!PAD_VAL:~%PAD_LEN%1!"=="" (
+  set /a PAD_LEN+=1
+  goto :pad_right_loop
+)
+set /a PAD_NEED=%~2 - PAD_LEN
+if !PAD_NEED! gtr 0 (
+  set "PAD_SPACES="
+  for /l %%P in (1,1,!PAD_NEED!) do set "PAD_SPACES=!PAD_SPACES! "
+  set "PAD_VAL=!PAD_VAL!!PAD_SPACES!"
+)
+endlocal & set "%~1=%PAD_VAL%"
+exit /b 0
+
 rem --------------------------- plan ---------------------------
 :plan_block
 setlocal EnableDelayedExpansion
@@ -591,44 +668,48 @@ set "PLAN_UPDATE=0"
 set "PLAN_SKIP=0"
 set "PLAN_SKIP_NAMES="
 
+call :color_echo "1;36m" "KẾ HOẠCH CÀI ĐẶT"
+call :color_echo "2;90m" "────────────────────────────────────────────────────────────────────"
+call :color_echo "2;90m" "  Công cụ                 Hiện tại       Đích           Thao tác"
+
 if defined SEL_Git (
-  call :plan_item "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
+  call :plan_table_row "Git" "!ST_Git!" "!VR_Git!" "!VL_Git!"
   call :plan_count "!ST_Git!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Git, "
 )
 if defined SEL_Node (
-  call :plan_item "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
+  call :plan_table_row "Node.js" "!ST_Node!" "!VR_Node!" "!VL_Node!"
   call :plan_count "!ST_Node!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Node.js, "
 )
 if defined SEL_Python (
-  call :plan_item "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
+  call :plan_table_row "Python" "!ST_Python!" "!VR_Python!" "!VL_Python!"
   call :plan_count "!ST_Python!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Python, "
 )
 if defined SEL_VSCode (
-  call :plan_item "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
+  call :plan_table_row "Visual Studio Code" "!ST_VSCode!" "!VR_VSCode!" "!VL_VSCode!"
   call :plan_count "!ST_VSCode!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Visual Studio Code, "
 )
 if defined SEL_VSCodeExt (
-  call :plan_item "Phần mở rộng Claude Code" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
+  call :plan_table_row "Claude Code ext" "!ST_VSCodeExt!" "!VR_VSCodeExt!" "!VL_VSCodeExt!"
   call :plan_count "!ST_VSCodeExt!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!Claude Code, "
 )
 if defined SEL_OpenClaw (
-  call :plan_item "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
+  call :plan_table_row "OpenClaw" "!ST_OpenClaw!" "!VR_OpenClaw!" "!VL_OpenClaw!"
   call :plan_count "!ST_OpenClaw!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!OpenClaw, "
 )
 if defined SEL_9Router (
-  call :plan_item "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
+  call :plan_table_row "9Router" "!ST_9Router!" "!VR_9Router!" "!VL_9Router!"
   call :plan_count "!ST_9Router!"
 ) else (
   set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES!9Router, "
@@ -637,7 +718,12 @@ if defined PLAN_SKIP_NAMES set "PLAN_SKIP_NAMES=!PLAN_SKIP_NAMES:~0,-2!"
 
 echo.
 if defined PLAN_SKIP_NAMES call :color_echo "2;90m" "  Bỏ qua (không chọn): !PLAN_SKIP_NAMES!"
-call :color_echo "1;97m" "Tổng kết: !PLAN_INSTALL! cài mới · !PLAN_UPDATE! cập nhật · !PLAN_SKIP! bỏ qua"
+call :color_echo "1;97m" "Tổng kết: "
+call :color_echo "1;32m" "!PLAN_INSTALL! cài mới"
+call :color_echo "1;97m" " · "
+call :color_echo "1;33m" "!PLAN_UPDATE! cập nhật"
+call :color_echo "1;97m" " · "
+call :color_echo "2;90m" "!PLAN_SKIP! bỏ qua"
 echo.
 call :color_echo "2;90m" "Phạm vi: tài khoản hiện tại · Không cần quyền Administrator"
 call :color_echo "2;90m" "Manifest: %%LOCALAPPDATA%%\AITools\manifest.txt"
